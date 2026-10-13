@@ -1,0 +1,25 @@
+defaultProject: "govuk-knowledge-graph-dev"
+defaultLocation: "europe-west2"
+defaultDataset: "sd_test"
+defaultAssertionDataset: "sd_test_assertions"
+dataformCoreVersion: 3.0.52
+
+vars:
+  # The source system environment
+  source_project: "govuk-knowledge-graph"
+  source_support_api_dataset: "support_api"
+  source_smart_survey_dataset: "smart_survey"
+  
+  # The target output environment
+  target_project: "govuk-knowledge-graph-dev"
+  target_dataset: "sd_test"
+
+  # Date filters
+  historic_load_date_interval: "30"
+  incremental_load_date_interval: "7"
+  partitionExpirationDays: "365"
+
+  # Backfill overrides (set to empty strings by default)
+  # example date format "2026-01-01"
+  backfill_start_date: ""
+  backfill_end_date: ""

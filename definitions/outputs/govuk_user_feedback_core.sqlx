@@ -1,0 +1,92 @@
+config {
+  type: "incremental",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  name: "govuk_user_feedback_core", 
+  uniqueKey: ["response_identifier"],
+  bigquery: {
+    partitionBy: "DATE(created)",
+    partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    
+    updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+}
+
+js {
+  const config = require("includes/config");
+}
+
+-- Step 1: Grab raw staging containers
+WITH base_feedback_containers AS (
+  SELECT * 
+  FROM ${ref("int_user_feedback_unioned")}
+  WHERE
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+    }
+),
+
+-- Step 2: Merge pre-sanitized responses back
+dlp_merged AS (
+  SELECT
+    raw.*,
+    COALESCE(clean.dlp_cleaned_value, raw.response_value_raw) AS dlp_value
+  FROM
+    base_feedback_containers AS raw
+  LEFT JOIN
+    ${ref("int_feedback_dlp_sanitized")} AS clean
+  ON
+    raw.response_identifier = clean.response_identifier
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "AND clean.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND clean.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "AND DATE(clean.created) >= DATE_SUB(CURRENT_DATE(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "")
+    }
+),
+
+-- Step 3: Run local regex substitution loops
+regex_remove_pii AS (
+  SELECT
+    *,
+    ${(() => {
+      let sqlExpression = "dlp_value";
+      (config.pii_regex || []).forEach(rule => {
+        // Safe quote escaping for single quotes
+        const pattern = rule.pattern.replace(/'/g, "\\'");
+        const replacement = rule.replacement.replace(/'/g, "\\'");
+        sqlExpression = "REGEXP_REPLACE(" + sqlExpression + ", r'" + pattern + "', '" + replacement + "')";
+      });
+      return sqlExpression;
+    })()} AS final_response_value
+  FROM
+    dlp_merged
+)
+
+-- Step 4: Map to Output Schema & guarantee uniqueness for MERGE
+SELECT
+  type,
+  feedback_record_id,
+  referrer,
+  created,
+  ended,
+  status,
+  subject_page_path,
+  javascript_enabled,
+  user_agent_string,
+  client_id,
+  response_identifier,
+  prompt_type,
+  prompt_value,
+  response_type,
+  final_response_value AS response_value_raw,
+  CURRENT_TIMESTAMP() AS batch_processed_ts
+FROM
+  regex_remove_pii
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY response_identifier 
+  ORDER BY created DESC
+) = 1

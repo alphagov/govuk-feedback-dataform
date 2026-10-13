@@ -1,0 +1,24 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  name: "int_censor_profanity"
+}
+
+js {
+  // 1. Import the word list
+  const { words } = require("includes/profanity_list");
+  
+  // 2. Escape any special regex characters in the words to prevent query injection
+  const escapedWords = words.map(w => w.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  
+  // 3. Create a single case-insensitive regex pattern joined by pipe symbols: (?i)\b(anal|anus|arian|...)\b
+  const regexPattern = "(?i)\\b(" + escapedWords.join("|") + ")\\b";
+}
+
+CREATE OR REPLACE FUNCTION ${self()}(text STRING)
+RETURNS STRING AS (
+  -- BigQuery replaces matching patterns with asterisks
+  REGEXP_REPLACE(text, r'${regexPattern}', '****')
+);

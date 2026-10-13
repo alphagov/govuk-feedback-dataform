@@ -1,0 +1,82 @@
+config {
+  type: "incremental",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  name: "stg_support_api_anonymous_contacts",
+  description: "Parsed Support API anonymous contacts",
+  uniqueKey: ["response_identifier"],
+  bigquery: {
+    partitionBy: "DATE(created)",
+    partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+}
+
+WITH unpivoted_contacts AS (
+  SELECT
+    TO_HEX(MD5(CONCAT(
+      'SupportAPI|',
+      COALESCE(CAST(raw.type AS STRING), ''), '|',
+      COALESCE(CAST(raw.id AS STRING), ''), '|',
+      COALESCE(unpivoted.prompt_value, ''), '|',
+      COALESCE(unpivoted.response_value_raw, 'NO_ANSWER')
+    ))) AS response_identifier,
+    'SupportAPI' AS source,
+    CAST(raw.type AS STRING) AS type,
+    CAST(raw.id AS STRING) AS feedback_record_id,
+    CAST(raw.referrer AS STRING) AS referrer,
+    DATETIME(raw.created_at, "Europe/London") AS created,
+    CAST(NULL AS DATETIME) AS ended,
+    CAST(NULL AS STRING) AS status,
+    CAST(raw.path AS STRING) AS subject_page_path,
+    CAST(raw.javascript_enabled AS BOOL) AS javascript_enabled,
+    CAST(raw.user_agent AS STRING) AS user_agent_string,
+    CAST(NULL AS STRING) AS client_id,
+    unpivoted.prompt_value,
+    unpivoted.prompt_type,
+    unpivoted.response_value_raw,
+    unpivoted.response_type,
+
+    -- Audit timestamp tracking when this batch was executed
+    CURRENT_TIMESTAMP() AS batch_processed_ts
+
+  FROM
+    `${dataform.projectConfig.vars.source_project}.${dataform.projectConfig.vars.source_support_api_dataset}.anonymous_contacts` AS raw
+    LEFT JOIN UNNEST(
+      CASE raw.type
+        WHEN 'LongFormContact' THEN [
+          STRUCT('details' AS prompt_value, 'open_ended' AS prompt_type, 'text' AS response_type, CAST(raw.details AS STRING) AS response_value_raw)
+        ]
+        WHEN 'ProblemReport' THEN [
+          STRUCT('what_doing' AS prompt_value, 'open_ended' AS prompt_type, 'text' AS response_type, CAST(raw.what_doing AS STRING) AS response_value_raw),
+          STRUCT('what_wrong' AS prompt_value, 'open_ended' AS prompt_type, 'text' AS response_type, CAST(raw.what_wrong AS STRING) AS response_value_raw)
+        ]
+        WHEN 'ServiceFeedback' THEN [
+          STRUCT('details' AS prompt_value, 'open_ended' AS prompt_type, 'text' AS response_type, CAST(raw.details AS STRING) AS response_value_raw),
+          STRUCT('service_satisfaction_rating' AS prompt_value, 'matrix' AS prompt_type, 'matrix_row' AS response_type, CAST(raw.service_satisfaction_rating AS STRING) AS response_value_raw)
+        ]
+        WHEN 'AggregatedServiceFeedback' THEN [
+          STRUCT('details' AS prompt_value, 'open_ended' AS prompt_type, 'text' AS response_type, CAST(raw.details AS STRING) AS response_value_raw),
+          STRUCT('service_satisfaction_rating' AS prompt_value, 'matrix' AS prompt_type, 'matrix_row' AS response_type, CAST(raw.service_satisfaction_rating AS STRING) AS response_value_raw)
+        ]
+        ELSE ARRAY<STRUCT<prompt_value STRING, prompt_type STRING, response_type STRING, response_value_raw STRING>>[]
+      END
+    ) AS unpivoted ON TRUE
+
+  WHERE 
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "raw.created_at >= TIMESTAMP('" + dataform.projectConfig.vars.backfill_start_date + "', 'Europe/London') AND raw.created_at < TIMESTAMP('" + dataform.projectConfig.vars.backfill_end_date + "', 'Europe/London')"
+        : "raw.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY)"
+    }
+)
+
+SELECT *
+FROM unpivoted_contacts
+-- Ensure no duplicate response_identifiers reach the BigQuery MERGE step
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY response_identifier 
+  ORDER BY created DESC
+) = 1
