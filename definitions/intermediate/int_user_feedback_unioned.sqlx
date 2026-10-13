@@ -14,45 +14,7 @@ config {
   }
 }
 
--- Audit log: only runs during regular incremental schedules, bypassed during backfills
-post_operations {
-  CREATE TABLE IF NOT EXISTS `${database()}.${schema()}.${name()}_audit_log` (
-    source STRING,
-    missing_date DATE,
-    execution_time TIMESTAMP
-  );
 
-  ${when(
-    incremental() && !(dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date),
-    `INSERT INTO \`${database()}.${schema()}.${name()}_audit_log\` (source, missing_date, execution_time)
-     WITH target_dates AS (
-       SELECT DISTINCT DATE(created) AS day, source
-       FROM ${self()}
-       WHERE DATE(created) >= DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval} DAY)
-     ),
-     expected_dates AS (
-       SELECT day
-       FROM UNNEST(GENERATE_DATE_ARRAY(
-         DATE_SUB(CURRENT_DATE(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval} DAY), 
-         DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-       )) AS day
-     )
-     SELECT 
-       s.source, 
-       e.day AS missing_date, 
-       CURRENT_TIMESTAMP() AS execution_time
-     FROM expected_dates e
-     CROSS JOIN (
-       SELECT 'SmartSurvey' AS source 
-       UNION ALL 
-       SELECT 'SupportAPI' AS source
-     ) s
-     LEFT JOIN target_dates t
-       ON e.day = t.day 
-       AND s.source = t.source
-     WHERE t.day IS NULL;`
-  )}
-}
 
 WITH smart_survey_parsed AS (
   SELECT * 
