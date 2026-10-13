@@ -1,0 +1,85 @@
+config {
+  type: "incremental",
+  name: "smart_survey_responses",
+  description: "Parsed SmartSurvey responses",
+  uniqueKey: ["response_identifier"],
+  bigquery: {
+    partitionBy: "DATE(created)",
+    partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+}
+
+WITH flattened_responses AS (
+  SELECT
+    TO_HEX(MD5(CONCAT(
+      'SmartSurvey|',
+      COALESCE(CAST(raw.id AS STRING), ''), '|',
+      COALESCE(CAST(page.id AS STRING), ''), '|',
+      COALESCE(CAST(question.id AS STRING), CAST(question.title AS STRING), ''), '|',
+      COALESCE(CAST(answer.id AS STRING), CAST(answer.value AS STRING), CAST(answer.column_title AS STRING), CAST(answer.choice_title AS STRING), 'NO_ANSWER')
+    ))) AS response_identifier,
+
+    'SmartSurvey' AS source,
+    'SmartSurvey' AS type,
+    CAST(raw.id AS STRING) AS feedback_record_id,
+    CAST(raw.referer_url AS STRING) AS referrer,
+    DATETIME(raw.date_started, "Europe/London") AS created,
+    DATETIME(raw.date_ended, "Europe/London") AS ended,
+    CAST(raw.status AS STRING) AS status,
+
+    CAST((
+      SELECT val.value 
+      FROM UNNEST(raw.variables) AS val 
+      WHERE val.label = 'Page Path' 
+      LIMIT 1
+    ) AS STRING) AS subject_page_path,
+
+    CAST(NULL AS BOOL) AS javascript_enabled,
+    CAST(raw.user_agent AS STRING) AS user_agent_string,
+
+    CAST((
+      SELECT val.value 
+      FROM UNNEST(raw.variables) AS val 
+      WHERE val.label = 'ClientID' 
+      LIMIT 1
+    ) AS STRING) AS client_id,
+
+    CAST(question.title AS STRING) AS prompt_value,
+    CAST(question.type AS STRING) AS prompt_type,
+    CAST(COALESCE(answer.value, answer.column_title, answer.choice_title) AS STRING) AS response_value_raw,
+    CAST(answer.type AS STRING) AS response_type,
+
+    CURRENT_TIMESTAMP() AS batch_processed_ts
+
+  FROM
+  -- Source project name is hardcoded, ensuring all environments use only the latest valid live data
+    `govuk-knowledge-graph.smart_survey.responses` AS raw
+    LEFT JOIN UNNEST(raw.pages) AS page ON TRUE
+    LEFT JOIN UNNEST(page.questions) AS question ON TRUE
+    LEFT JOIN UNNEST(question.answers) AS answer ON TRUE
+
+  WHERE 
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? `raw.date_started >= TIMESTAMP('${dataform.projectConfig.vars.backfill_start_date}', 'Europe/London')
+           AND raw.date_started < TIMESTAMP('${dataform.projectConfig.vars.backfill_end_date}', 'Europe/London')`
+        : `raw.date_started >= TIMESTAMP_SUB(
+             CURRENT_TIMESTAMP(),
+             INTERVAL ${
+               incremental()
+                 ? dataform.projectConfig.vars.incremental_load_date_interval
+                 : dataform.projectConfig.vars.historic_load_date_interval
+             } DAY
+           )`
+    }
+)
+
+SELECT *
+FROM flattened_responses
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY response_identifier 
+  ORDER BY created DESC
+) = 1
