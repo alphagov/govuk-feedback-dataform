@@ -1,0 +1,33 @@
+defaultProject: "gds-bq-processing"
+defaultLocation: "europe-west2"
+defaultDataset: "govuk_feedback_processing_stg_s"
+dataformCoreVersion: 3.0.52
+
+vars:
+  # The source system environment
+  source_project: "govuk-knowledge-graph"
+  source_support_api_dataset: "support_api"
+  source_smart_survey_dataset: "smart_survey"
+  
+  # The staging environment
+  staging_project: "gds-bq-processing"
+  staging_dataset: "govuk_feedback_processing_stg_s"
+
+  # The dlp bq function environment
+  dlp_project: "gds-bq-processing"
+  dlp_dataset: "functions"
+
+  # The target environment
+  target_project: "govuk-user-feedback"
+  target_dataset: "govuk_feedback_processing_dw_s"
+
+
+  # Date filters
+  historic_load_date_interval: "7" # used during the adhoc one off initial load only
+  incremental_load_date_interval: "7"
+  partitionExpirationDays: "365"
+
+  # Backfill overrides (set to empty strings by default)
+  # example date format "2026-01-01"
+  backfill_start_date: ""
+  backfill_end_date: ""

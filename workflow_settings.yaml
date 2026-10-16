@@ -1,12 +1,11 @@
-defaultProject: "govuk-knowledge-graph-dev"
+defaultProject: "gds-bq-processing-dev"
 defaultLocation: "europe-west2"
-defaultDataset: "sd_test"
-defaultAssertionDataset: "sd_test_assertions"
+defaultDataset: "govuk_feedback_processing_stg_s"
 dataformCoreVersion: 3.0.52
 
 vars:
   # The source system environment
-  source_project: "govuk-knowledge-graph-dev"
+  source_project: "govuk-knowledge-graph"
   source_support_api_dataset: "support_api"
   source_smart_survey_dataset: "smart_survey"
   
@@ -24,7 +23,7 @@ vars:
 
 
   # Date filters
-  historic_load_date_interval: "30" # used during the adhoc one off initial load only
+  historic_load_date_interval: "7" # used during the adhoc one off initial load only
   incremental_load_date_interval: "7"
   partitionExpirationDays: "365"
 
