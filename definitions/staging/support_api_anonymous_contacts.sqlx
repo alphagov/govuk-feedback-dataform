@@ -1,8 +1,8 @@
 config {
   type: "incremental",
-  database: dataform.projectConfig.vars.target_project,
-  schema: dataform.projectConfig.vars.target_dataset,
-  name: "stg_support_api_anonymous_contacts",
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "support_api_anonymous_contacts",
   description: "Parsed Support API anonymous contacts",
   uniqueKey: ["response_identifier"],
   bigquery: {

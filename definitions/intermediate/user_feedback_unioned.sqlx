@@ -1,8 +1,8 @@
 config {
   type: "incremental",
-  database: dataform.projectConfig.vars.target_project,
-  schema: dataform.projectConfig.vars.target_dataset,
-  name: "int_user_feedback_unioned",
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "user_feedback_unioned",
   description: "Staging layer: normalizes, unpivots, and unions raw SmartSurvey and Support API data, including unanswered/skipped prompts.",
   uniqueKey: ["response_identifier"], 
   bigquery: {
@@ -18,7 +18,7 @@ config {
 
 WITH smart_survey_parsed AS (
   SELECT * 
-  FROM ${ref("stg_smartsurvey_responses")}
+  FROM ${ref("smartsurvey_responses")}
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
@@ -29,7 +29,7 @@ WITH smart_survey_parsed AS (
 
 support_api_parsed AS (
   SELECT * 
-  FROM ${ref("stg_support_api_anonymous_contacts")}
+  FROM ${ref("support_api_anonymous_contacts")}
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)

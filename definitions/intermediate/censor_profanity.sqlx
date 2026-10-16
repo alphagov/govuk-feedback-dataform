@@ -1,9 +1,9 @@
 config {
   type: "operations",
   hasOutput: true,
-  database: dataform.projectConfig.vars.target_project,
-  schema: dataform.projectConfig.vars.target_dataset,
-  name: "int_censor_profanity"
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "censor_profanity"
 }
 
 js {

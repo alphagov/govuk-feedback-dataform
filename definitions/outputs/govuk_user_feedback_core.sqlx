@@ -21,7 +21,7 @@ js {
 -- Step 1: Grab raw staging containers
 WITH base_feedback_containers AS (
   SELECT * 
-  FROM ${ref("int_user_feedback_unioned")}
+  FROM ${ref("user_feedback_unioned")}
   WHERE
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
@@ -38,7 +38,7 @@ dlp_merged AS (
   FROM
     base_feedback_containers AS raw
   LEFT JOIN
-    ${ref("int_feedback_dlp_sanitized")} AS clean
+    ${ref("feedback_dlp_sanitized")} AS clean
   ON
     raw.response_identifier = clean.response_identifier
     ${

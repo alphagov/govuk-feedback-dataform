@@ -1,8 +1,8 @@
 config {
   type: "incremental",
-  database: dataform.projectConfig.vars.target_project,
-  schema: dataform.projectConfig.vars.target_dataset,
-  name: "int_feedback_dlp_sanitized",
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "feedback_dlp_sanitized",
   description: "Isolates the high-risk Cloud DLP de-identification step to optimize API batching and costs.",
   uniqueKey: ["response_identifier"],
   bigquery: {
@@ -21,9 +21,9 @@ WITH base_records AS (
     raw.feedback_record_id,
     raw.created,
     -- Truncate and censor profanities locally before hitting remote DLP API
-    ${ref("int_censor_profanity")}(TRIM(SUBSTR(raw.response_value_raw, 1, 2200))) AS clean_raw_value
+    ${ref("censor_profanity")}(TRIM(SUBSTR(raw.response_value_raw, 1, 2200))) AS clean_raw_value
   FROM
-    ${ref("int_user_feedback_unioned")} AS raw
+    ${ref("user_feedback_unioned")} AS raw
 
   -- Anti-join against self ONLY in incremental mode (prevents missing table crash on first run)
   ${
@@ -63,7 +63,7 @@ SELECT
   -- Remote DLP call only if text is non-empty
   CASE 
     WHEN NULLIF(TRIM(clean_raw_value), '') IS NOT NULL THEN
-      `${dataform.projectConfig.vars.target_project}.${dataform.projectConfig.vars.target_dataset}.dlp_deidentify_text`(clean_raw_value)
+      `${dataform.projectConfig.vars.dlp_project}.${dataform.projectConfig.vars.dlp_dataset}.dlp_deidentify_text`(clean_raw_value)
     ELSE 
       clean_raw_value
   END AS dlp_cleaned_value,

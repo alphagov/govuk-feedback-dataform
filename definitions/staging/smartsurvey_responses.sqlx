@@ -1,8 +1,8 @@
 config {
   type: "incremental",
-  database: dataform.projectConfig.vars.target_project,
-  schema: dataform.projectConfig.vars.target_dataset,
-  name: "stg_smartsurvey_responses",
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "smartsurvey_responses",
   description: "Parsed SmartSurvey responses",
   uniqueKey: ["response_identifier"],
   bigquery: {

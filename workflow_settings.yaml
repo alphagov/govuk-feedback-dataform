@@ -6,16 +6,25 @@ dataformCoreVersion: 3.0.52
 
 vars:
   # The source system environment
-  source_project: "govuk-knowledge-graph"
+  source_project: "govuk-knowledge-graph-dev"
   source_support_api_dataset: "support_api"
   source_smart_survey_dataset: "smart_survey"
   
-  # The target output environment
-  target_project: "govuk-knowledge-graph-dev"
-  target_dataset: "sd_test"
+  # The staging environment
+  staging_project: "gds-bq-processing-dev"
+  staging_dataset: "govuk_feedback_processing_stg_s"
+
+  # The dlp bq function environment
+  dlp_project: "gds-bq-processing"
+  dlp_dataset: "functions"
+
+  # The target environment
+  target_project: "govuk-user-feedback-dev"
+  target_dataset: "govuk_feedback_processing_dw_s"
+
 
   # Date filters
-  historic_load_date_interval: "30"
+  historic_load_date_interval: "30" # used during the adhoc one off initial load only
   incremental_load_date_interval: "7"
   partitionExpirationDays: "365"
 
