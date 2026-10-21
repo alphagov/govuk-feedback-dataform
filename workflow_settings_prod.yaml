@@ -1,0 +1,27 @@
+defaultProject: "gds-bq-processing"
+defaultLocation: "europe-west2"
+defaultDataset: "govuk_feedback_processing_stg_s"
+dataformCoreVersion: 3.1.0
+
+vars:
+  # The source project name is excluded from the variable list and hardcoded in the SQLX files, ensuring all environments use only the latest valid live data
+  
+  # The staging environment
+  staging_project: "gds-bq-processing"
+  staging_dataset: "govuk_feedback_processing_stg_s"
+
+  # The target environment
+  target_project: "govuk-user-feedback"
+  target_dataset: "govuk_feedback_processing_dw_s"
+
+  # Date filters
+  historic_load_date_interval: "7" # used during the adhoc one off initial load only
+  incremental_load_date_interval: "7" # Merges the inserts, updates, and deletes for the past seven days
+  partitionExpirationDays: "365"
+
+  # Backfill overrides (set to empty strings by default)
+  # keep the below backfill dates empty during daily incremental runs
+  # example date format "2026-01-01"
+  backfill_start_date: ""
+  backfill_end_date: ""
+  

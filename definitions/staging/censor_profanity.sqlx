@@ -1,0 +1,24 @@
+config {
+  type: "operations",
+  hasOutput: true,
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "censor_profanity"
+}
+
+CREATE OR REPLACE FUNCTION ${self()}(text STRING)
+RETURNS STRING AS (
+  -- COALESCE ensures that if the profanity_list table is empty, the original text is returned unmodified
+  COALESCE(
+    REGEXP_REPLACE(
+      text,
+      (
+        SELECT CONCAT(r'(?i)\b(', STRING_AGG(REGEXP_REPLACE(phrase, r'([-\\^$*+?.()|[\]{}])', r'\\\1'), '|'), r')\b')
+        FROM ${ref("profanity_list")}
+        WHERE phrase IS NOT NULL AND phrase != ''
+      ),
+      '****'
+    ),
+    text
+  )
+);

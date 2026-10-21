@@ -1,0 +1,61 @@
+config {
+  type: "incremental",
+  database: dataform.projectConfig.vars.staging_project,
+  schema: dataform.projectConfig.vars.staging_dataset,
+  name: "user_feedback_unioned",
+  description: "Staging layer: normalizes, unpivots, and unions raw SmartSurvey and Support API data, including unanswered/skipped prompts.",
+  uniqueKey: ["response_identifier"], 
+  bigquery: {
+    partitionBy: "DATE(created)",
+    partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+}
+
+
+
+WITH smart_survey_parsed AS (
+  SELECT * 
+  FROM ${ref("smart_survey_responses")}
+  WHERE 
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+    }
+),
+
+support_api_parsed AS (
+  SELECT * 
+  FROM ${ref("support_api_anonymous_contacts")}
+  WHERE 
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+    }
+),
+
+unioned_sources AS (
+  SELECT * FROM smart_survey_parsed
+  UNION ALL
+  SELECT * FROM support_api_parsed
+)
+
+SELECT 
+  * EXCEPT(batch_processed_ts),
+  CURRENT_TIMESTAMP() AS batch_processed_ts
+FROM unioned_sources
+WHERE 
+  response_identifier IS NOT NULL
+  AND source IS NOT NULL
+  AND feedback_record_id IS NOT NULL
+  AND created IS NOT NULL
+  AND prompt_value IS NOT NULL
+-- Deduplicate within the window to guarantee MERGE uniqueness
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY response_identifier 
+  ORDER BY created DESC
+) = 1
