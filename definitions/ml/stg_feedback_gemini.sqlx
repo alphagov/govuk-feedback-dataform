@@ -1,0 +1,91 @@
+config {
+  type: "incremental",
+  schema: "sd_test",
+  name: "stg_feedback_gemini",
+  uniqueKey: ["response_identifier"],
+  description: "Processes new feedback using a London-pinned Gemini model to extract British sentiment and spam indicators."
+}
+
+WITH raw_records AS (
+  SELECT
+    response_identifier,
+    response_value_raw AS text,
+    created
+  FROM
+    `govuk-user-feedback-dev.sd_test.user_feedback_core_ml_poc`
+  WHERE
+    response_type = 'text'
+    -- Incremental filtering: only pull new records
+    --${when(incremental(), `AND created > (SELECT MAX(created) FROM ${self()})` )}
+    and feedback_record_id = '308963931'
+),
+
+-- Table-Valued Function (TVF) to query BQML
+gemini_predictions AS (
+  SELECT
+    response_identifier,
+    created,
+    result AS gemini_raw
+  FROM
+    AI.GENERATE_TEXT(
+      -- Forces local processing strictly within the europe-west2 (London) datacenter
+      MODEL `govuk-user-feedback-dev.sd_test.feedback_ml_gemini_model_london`,
+      (
+        SELECT
+          response_identifier,
+          created,
+          CONCAT(
+            "You are an expert analyst in British English and UK cultural nuances, specialized in analyzing public sector feedback for GOV.UK.\n",
+            "Analyze the following user feedback and determine its British sentiment, its UK-specific spam classification, and calculate the probability of it being spam.\n\n",
+            
+            "RULES FOR BRITISH SENTIMENT ANALYSIS:\n",
+            "1. Decode British Understatement: British users often use polite, understated language to express deep frustration. Phrases like 'a bit disappointed', 'not ideal', 'could be better', or 'with respect' should be treated as NEGATIVE.\n",
+            "2. Identify Sarcasm & British Slang: Understand terms like 'brilliant' or 'perfect' when used sarcastically. Phrases like 'not bad' or 'quite good' are typically POSITIVE or NEUTRAL depending on the context.\n",
+            "3. Accommodate British Spelling: Understand and process British variations (e.g., 'colour', 'organise', 'programme', 'queue').\n\n",
+            
+            "RULES FOR BRITISH SPAM CLASSIFICATION:\n",
+            "1. Classify as 'SPAM' if it contains commercial ads, external promotional links, automated SEO text, or UK-focused scams (e.g., fake HMRC refund claims, PPI recovery offers, lottery wins, or offshore gambling ads).\n",
+            "2. Classify as 'HAM' if it is a genuine user attempting to communicate about UK public services (e.g., NHS, DVLA, Council Tax, Universal Credit, HM Passport Office, visas).\n",
+            "3. DO NOT flag anger as spam: Feedback containing angry British slang (e.g., calling a system 'rubbish', 'daft', 'shambles', or 'a joke') is NOT spam; it is highly NEGATIVE HAM.\n\n",
+            
+            "Feedback to analyze: ", text
+          ) AS prompt
+        FROM
+          raw_records
+      ),
+      STRUCT(
+        0.1 AS temperature, -- Low temperature guarantees highly consistent, deterministic outputs
+        '''{
+          "response_mime_type": "application/json",
+          "response_schema": {
+            "type": "OBJECT",
+            "properties": {
+              "sentiment": { 
+                "type": "STRING", 
+                "description": "Must be exactly: POSITIVE, NEGATIVE, or NEUTRAL"
+              },
+              "spam_classification": { 
+                "type": "STRING", 
+                "description": "Must be exactly: SPAM or HAM" 
+              },
+              "spam_probability": { 
+                "type": "NUMBER", 
+                "description": "Floating-point probability between 0.0 and 1.0 indicating how likely the text is to be SPAM"
+              }
+            },
+            "required": ["sentiment", "spam_classification", "spam_probability"]
+          }
+        }''' AS model_params
+      )
+    )
+)
+
+SELECT
+  response_identifier,
+  created,
+  -- Parse the structured output variables
+  JSON_VALUE(gemini_raw, '$.sentiment') AS sentiment,
+  JSON_VALUE(gemini_raw, '$.spam_classification') AS spam_classification,
+  CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) AS spam_probability
+FROM
+  gemini_predictions

@@ -1,6 +1,0 @@
-config {
-  type: "declaration",
-  database: dataform.projectConfig.vars.staging_project,
-  schema: dataform.projectConfig.vars.staging_dataset,
-  name: "profanity_list"
-}
