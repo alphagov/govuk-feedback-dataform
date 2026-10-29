@@ -1,0 +1,34 @@
+
+  SELECT 
+  id,
+  feedback,
+  sentiment,
+  is_spam ,
+  -- Parse out the JSON keys
+  JSON_EXTRACT_SCALAR(result, '$.sentiment') AS predicted_sentiment,
+  JSON_EXTRACT_SCALAR(result, '$.is_spam') AS predicted_is_spam,
+  status AS model_execution_status
+FROM 
+  AI.GENERATE_TEXT(
+    MODEL `govuk-user-feedback-dev.my_test.feedback_bq_ml_gemini_model_london`,
+    (
+      SELECT 
+        id,
+        feedback,
+        sentiment,
+        is_spam,
+        -- Prompting the model for a simplified 'Yes' or 'No' JSON output
+        CONCAT(
+          "Analyze this text. Classify the sentiment as 'Positive', 'Negative', or 'Neutral'. ",
+          "Classify if it is spam as 'Yes' or 'No'. ",
+          "You must return your response ONLY as a valid JSON object with the keys 'sentiment' and 'is_spam'. Do not write markdown blocks.\n\n",
+          "Text: ", feedback
+        ) AS prompt
+      FROM 
+        `govuk-user-feedback-dev.my_test.test`
+    ),
+    STRUCT(
+      0.1 AS temperature,
+      100 AS max_output_tokens
+    )
+  );
