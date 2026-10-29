@@ -2,7 +2,7 @@ config {
   type: "table",                      
   schema: "ml_test",     
   name: "predicted_feedback_test_results",
-  description: "Feedback data enriched with Gemini sentiment and spam predictions"
+  description: "Feedback data enriched with Gemini sentiment, sentiment probability, and spam predictions"
 }
 
 SELECT 
@@ -10,6 +10,7 @@ SELECT
   feedback,
   -- Extracting and parsing the predicted fields from JSON response
   JSON_EXTRACT_SCALAR(result, '$.sentiment') AS predicted_sentiment,
+  SAFE_CAST(JSON_EXTRACT_SCALAR(result, '$.sentiment_probability') AS FLOAT64) AS predicted_sentiment_probability,
   JSON_EXTRACT_SCALAR(result, '$.is_spam') AS predicted_is_spam,
   SAFE_CAST(JSON_EXTRACT_SCALAR(result, '$.spam_probability') AS FLOAT64) AS predicted_spam_probability,
   CASE 
@@ -23,13 +24,14 @@ FROM
       SELECT 
         id,
         feedback,
-        -- Instructing the model to return sentiment, is_spam, and spam_probability
+        -- Instructing the model to return sentiment, sentiment_probability, is_spam, and spam_probability
         CONCAT(
           "Analyze this customer feedback text.\n",
           "1. Sentiment: Classify as 'Positive', 'Negative', or 'Neutral'.\n",
-          "2. Is Spam: Classify if it is spam as 'Yes' or 'No'.\n",
-          "3. Spam Probability: Estimate a probability from 0.00 (not spam) to 1.00 (absolute spam) based on spam indicators.\n\n",
-          "You must return your response ONLY as a valid JSON object with the exact keys: 'sentiment', 'is_spam', and 'spam_probability'. Do not wrap the output in markdown code blocks.\n\n",
+          "2. Sentiment Probability: Estimate a probability from 0.00 (low confidence) to 1.00 (absolute confidence) for the chosen sentiment.\n",
+          "3. Is Spam: Classify if it is spam as 'Yes' or 'No'.\n",
+          "4. Spam Probability: Estimate a probability from 0.00 (not spam) to 1.00 (absolute spam) based on spam indicators.\n\n",
+          "You must return your response ONLY as a valid JSON object with the exact keys: 'sentiment', 'sentiment_probability', 'is_spam', and 'spam_probability'. Do not wrap the output in markdown code blocks.\n\n",
           "Text: ", feedback
         ) AS prompt
       FROM 
