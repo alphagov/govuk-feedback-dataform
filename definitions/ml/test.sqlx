@@ -1,34 +1,43 @@
+config {
+  type: "table",                      
+  schema: "ml_test",     
+  name: "predicted_feedback_test_results",
+  description: "Feedback data enriched with Gemini sentiment and spam predictions"
+}
 
-  SELECT 
+SELECT 
   id,
   feedback,
-  sentiment,
-  is_spam ,
-  -- Parse out the JSON keys
+  -- Extracting and parsing the predicted fields from JSON response
   JSON_EXTRACT_SCALAR(result, '$.sentiment') AS predicted_sentiment,
   JSON_EXTRACT_SCALAR(result, '$.is_spam') AS predicted_is_spam,
-  status AS model_execution_status
+  SAFE_CAST(JSON_EXTRACT_SCALAR(result, '$.spam_probability') AS FLOAT64) AS predicted_spam_probability,
+  CASE 
+  WHEN status = '' OR status IS NULL THEN 'Success'
+    ELSE CONCAT('Fail: ', status)
+  END AS model_execution_status
 FROM 
   AI.GENERATE_TEXT(
-    MODEL `govuk-user-feedback-dev.my_test.feedback_bq_ml_gemini_model_london`,
+    MODEL `govuk-user-feedback-dev.ml_test.feedback_bq_ml_gemini_model_london`,
     (
       SELECT 
         id,
         feedback,
-        sentiment,
-        is_spam,
-        -- Prompting the model for a simplified 'Yes' or 'No' JSON output
+        -- Instructing the model to return sentiment, is_spam, and spam_probability
         CONCAT(
-          "Analyze this text. Classify the sentiment as 'Positive', 'Negative', or 'Neutral'. ",
-          "Classify if it is spam as 'Yes' or 'No'. ",
-          "You must return your response ONLY as a valid JSON object with the keys 'sentiment' and 'is_spam'. Do not write markdown blocks.\n\n",
+          "Analyze this customer feedback text.\n",
+          "1. Sentiment: Classify as 'Positive', 'Negative', or 'Neutral'.\n",
+          "2. Is Spam: Classify if it is spam as 'Yes' or 'No'.\n",
+          "3. Spam Probability: Estimate a probability from 0.00 (not spam) to 1.00 (absolute spam) based on spam indicators.\n\n",
+          "You must return your response ONLY as a valid JSON object with the exact keys: 'sentiment', 'is_spam', and 'spam_probability'. Do not wrap the output in markdown code blocks.\n\n",
           "Text: ", feedback
         ) AS prompt
       FROM 
-        `govuk-user-feedback-dev.my_test.test`
+        -- If the source table is also managed by Dataform, use ${ref("test")} instead of hardcoding
+        `govuk-user-feedback-dev.ml_test.test` 
     ),
     STRUCT(
       0.1 AS temperature,
-      100 AS max_output_tokens
+      150 AS max_output_tokens
     )
-  );
+  )
