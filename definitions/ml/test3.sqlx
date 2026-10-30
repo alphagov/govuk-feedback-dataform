@@ -50,7 +50,7 @@ USING (
               "RULES FOR BRITISH SPAM CLASSIFICATION:\n",
               "1. Classify as 'spam' if it contains commercial ads, external promotional links, automated SEO text, or UK-focused scams (e.g., fake HMRC refund claims, PPI recovery offers, lottery wins, or offshore gambling ads).\n",
               "2. Classify as 'not spam' if it is a genuine user attempting to communicate about UK public services (e.g., NHS, DVLA, Council Tax, Universal Credit, HM Passport Office, visas).\n",
-              "3. DO NOT flag anger as spam: Feedback containing angry British slang (e.g., calling a system 'rubbish', 'daft', 'shambles', or 'a joke') is NOT spam; it is highly NEGATIVE HAM.\n\n",
+              "3. DO NOT flag anger as spam: Feedback containing angry British slang (e.g., calling a system 'rubbish', 'daft', 'shambles', or 'a joke') is NOT spam; it is highly NEGATIVE not spam.\n\n",
               
               "Feedback to analyze: ", text
             ) AS prompt
@@ -71,11 +71,11 @@ USING (
                   },
                   "spam_classification": { 
                     "type": "STRING", 
-                    "description": "Must be exactly: SPAM or HAM" 
+                    "description": "Must be exactly: spam or not spam" 
                   },
                   "spam_probability": { 
                     "type": "NUMBER", 
-                    "description": "Floating-point probability between 0.0 and 1.0 indicating how likely the text is to be SPAM"
+                    "description": "Floating-point probability between 0.0 and 1.0 indicating how likely the text is to be spam"
                   }
                 },
                 "required": ["sentiment", "spam_classification", "spam_probability"]
