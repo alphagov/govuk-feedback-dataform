@@ -11,7 +11,7 @@ USING (
   WITH raw_records AS (
     SELECT
       response_identifier,
-      response_value_raw AS text,
+      response_value AS text,
       created
     FROM
       `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc`
@@ -19,7 +19,12 @@ USING (
       response_type = 'text'
       -- Incremental filtering: only pull new records
       --${when(incremental(), `AND created > (SELECT MAX(created) FROM ${self()})` )}
-      AND feedback_record_id = '308963931'
+      AND feedback_record_id in (
+'308963931',
+'309178036',
+'309190868',
+'309177767'
+)
       -- Cost Optimization: Avoid calling Gemini again for rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
   ),
