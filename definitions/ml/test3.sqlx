@@ -17,6 +17,7 @@ USING (
       `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc`
     WHERE
       response_type = 'text'
+      AND created>"2025-01-01"
       -- Incremental filtering: only pull new records
       --${when(incremental(), `AND created > (SELECT MAX(created) FROM ${self()})` )}
       AND feedback_record_id in (
@@ -27,7 +28,7 @@ USING (
 )
       -- Cost Optimization: Avoid calling Gemini again for rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
-      AND created>"2026-01-01"
+      
   ),
 
   -- Table-Valued Function (TVF) to query BQML
@@ -94,6 +95,7 @@ USING (
 
   SELECT
     response_identifier,
+    created,
     JSON_VALUE(gemini_raw, '$.sentiment') AS sentiment,
     JSON_VALUE(gemini_raw, '$.spam_classification') AS spam_classification,
     CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) AS spam_probability
@@ -101,6 +103,8 @@ USING (
     gemini_predictions
 ) S
 ON T.response_identifier = S.response_identifier
+   AND T.created = S.created
+   AND T.created >"2025-01-01"
 WHEN MATCHED THEN
   UPDATE SET
     T.sentiment = S.sentiment,
