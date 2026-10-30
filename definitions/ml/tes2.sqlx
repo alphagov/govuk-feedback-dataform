@@ -1,9 +1,8 @@
 config {
-  type: "table",
-  schema: "ml_test",
-  name: "user_feedback_ml_poc",
-  description: "Processes new feedback using a London-pinned Gemini model to extract British sentiment and spam indicators."
+  type: "operations",
+  tags: ["feedback_enrichment"]
 }
+
 
 WITH raw_records AS (
   SELECT
