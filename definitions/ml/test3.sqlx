@@ -27,6 +27,7 @@ USING (
 )
       -- Cost Optimization: Avoid calling Gemini again for rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
+      AND created>"2026-01-01"
   ),
 
   -- Table-Valued Function (TVF) to query BQML
