@@ -98,7 +98,8 @@ USING (
     created,
     JSON_VALUE(gemini_raw, '$.sentiment') AS sentiment,
     JSON_VALUE(gemini_raw, '$.spam_classification') AS spam_classification,
-    CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) AS spam_probability
+    CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) AS spam_probability,
+    CURRENT_TIMESTAMP() batch_processed_ts
   FROM
     gemini_predictions
 ) S
