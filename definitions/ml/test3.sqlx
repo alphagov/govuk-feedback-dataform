@@ -48,8 +48,8 @@ USING (
               "3. Accommodate British Spelling: Understand and process British variations (e.g., 'colour', 'organise', 'programme', 'queue').\n\n",
               
               "RULES FOR BRITISH SPAM CLASSIFICATION:\n",
-              "1. Classify as 'SPAM' if it contains commercial ads, external promotional links, automated SEO text, or UK-focused scams (e.g., fake HMRC refund claims, PPI recovery offers, lottery wins, or offshore gambling ads).\n",
-              "2. Classify as 'HAM' if it is a genuine user attempting to communicate about UK public services (e.g., NHS, DVLA, Council Tax, Universal Credit, HM Passport Office, visas).\n",
+              "1. Classify as 'spam' if it contains commercial ads, external promotional links, automated SEO text, or UK-focused scams (e.g., fake HMRC refund claims, PPI recovery offers, lottery wins, or offshore gambling ads).\n",
+              "2. Classify as 'not spam' if it is a genuine user attempting to communicate about UK public services (e.g., NHS, DVLA, Council Tax, Universal Credit, HM Passport Office, visas).\n",
               "3. DO NOT flag anger as spam: Feedback containing angry British slang (e.g., calling a system 'rubbish', 'daft', 'shambles', or 'a joke') is NOT spam; it is highly NEGATIVE HAM.\n\n",
               
               "Feedback to analyze: ", text
