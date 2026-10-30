@@ -1,7 +1,7 @@
 config {
   type: "incremental",
-  schema: "staging",
-  name: "stg_feedback_gemini",
+  schema: "ml_test",
+  name: "user_feedback_ml",
   uniqueKey: ["response_identifier"],
   description: "Processes new feedback using a London-pinned Gemini model to extract British sentiment and spam indicators."
 }
@@ -12,11 +12,12 @@ WITH raw_records AS (
     response_value_raw AS text,
     created
   FROM
-    ${ref("govuk_user_feedback_core")}
+    `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc`
   WHERE
     response_type = 'text'
     -- Incremental filtering: only pull new records
-    ${when(incremental(), `AND created > (SELECT MAX(created) FROM ${self()})` )}
+    --${when(incremental(), `AND created > (SELECT MAX(created) FROM ${self()})` )}
+    and feedback_record_id = '308963931'
 ),
 
 -- Table-Valued Function (TVF) to query BQML
@@ -28,7 +29,7 @@ gemini_predictions AS (
   FROM
     AI.GENERATE_TEXT(
       -- Forces local processing strictly within the europe-west2 (London) datacenter
-      MODEL `staging.gemini_model_london`,
+      MODEL `govuk-user-feedback-dev.ml_test.feedback_bq_ml_gemini_model_london`,
       (
         SELECT
           response_identifier,
