@@ -110,4 +110,5 @@ WHEN MATCHED THEN
   UPDATE SET
     T.sentiment = S.sentiment,
     T.spam_classification = S.spam_classification,
-    T.spam_probability = S.spam_probability
+    T.spam_probability = S.spam_probability,
+    T.batch_processed_ts = S.batch_processed_ts
