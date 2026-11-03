@@ -3,7 +3,7 @@ config {
   tags: ["feedback_enrichment"]
 }
 
--- Step 1: Query Gemini and merge the outputs back to the original table
+-- Query Gemini and merge the outputs back to the original table
 MERGE `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc` T
 USING (
   WITH raw_records AS (
@@ -15,14 +15,13 @@ USING (
       `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc`
     WHERE
       response_type = 'text'
-      --AND created > "2025-01-01"
       -- Process only changes/new records from the last 7 days
       AND created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 7 DAY)
-      -- Cost Optimization: Avoid calling Gemini again for rows that already have predictions
+      -- Avoid calling Gemini again for rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
   ),
 
-  -- Table-Valued Function (TVF) to query BQML
+  -- Table-Valued Function to query BQML
   gemini_predictions AS (
     SELECT
       response_identifier,
@@ -96,8 +95,7 @@ USING (
 ) S
 ON T.response_identifier = S.response_identifier
   AND T.created = S.created
-  --AND T.created > "2025-01-01"
-  -- Crucial for Partition Pruning: Restricts the target scan to only the last 7 days' partitions.
+  -- Restricts the target scan to only the last 7 days' partitions.
   AND T.created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 7 DAY)
 WHEN MATCHED THEN
   UPDATE SET
