@@ -107,9 +107,9 @@ SELECT
   prompt_value,
   response_type,
   final_response_value AS response_value,
-  NULL AS sentiment,
-  NULL AS spam_classification,
-  NULL AS spam_probability,
+  CAST(NULL AS STRING) AS sentiment,
+  CAST(NULL AS STRING) AS spam_classification,
+  CAST(NULL AS FLOAT64) AS spam_probability,
   CURRENT_TIMESTAMP() AS batch_processed_ts
 FROM
   regex_remove_pii
