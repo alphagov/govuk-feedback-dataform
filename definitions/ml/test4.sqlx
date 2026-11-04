@@ -4,7 +4,7 @@ config {
 }
 
 -- Query Gemini and merge the outputs back to the original table
-MERGE `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc` T
+MERGE `govuk-user-feedback-dev.ml_test.user_feedback_ml_poc` T
 USING (
   WITH raw_records AS (
     SELECT
@@ -12,7 +12,7 @@ USING (
       response_value AS text,
       created
     FROM
-      `govuk-user-feedback-dev.ml_test.user_feedback_core_ml_poc`
+      `govuk-user-feedback-dev.ml_test.user_feedback_ml_poc`
     WHERE
       response_type = 'text'
       -- Process only changes/new records from the last 7 days
