@@ -22,7 +22,10 @@ config {
               prompt_type: "Type of feedback prompt",
               prompt_value: "Feedback prompt",
               response_type: "Type of feedback response",
-              response_value_raw: "raw Feedback response",
+              response_value: "raw Feedback response",
+              sentiment: "Predicted sentiment of feedback response",
+              spam_classification: "Predicted classification of feedback response as spam/not spam",
+              spam_probability: "Confidence (probability) of spam prediction",
               batch_processed_ts: "batch processing timestamp"
     },
   bigquery: {
@@ -103,7 +106,10 @@ SELECT
   prompt_type,
   prompt_value,
   response_type,
-  final_response_value AS response_value_raw,
+  final_response_value AS response_value,
+  NULL AS sentiment,
+  NULL AS spam_classification,
+  NULL AS spam_probability,
   CURRENT_TIMESTAMP() AS batch_processed_ts
 FROM
   regex_remove_pii
