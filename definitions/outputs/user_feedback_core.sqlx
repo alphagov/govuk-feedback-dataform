@@ -27,7 +27,8 @@ config {
               spam_classification: "Predicted classification of feedback response as spam/not spam",
               spam_probability: "Confidence (probability) of spam prediction",
               batch_processed_ts: "batch processing timestamp"
-    },
+
+  },
   bigquery: {
     partitionBy: "DATE(created)",
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
@@ -79,7 +80,6 @@ regex_remove_pii AS (
     ${(() => {
       let sqlExpression = "dlp_value";
       (config.pii_regex || []).forEach(rule => {
-        // Safe quote escaping for single quotes
         const pattern = rule.pattern.replace(/'/g, "\\'");
         const replacement = rule.replacement.replace(/'/g, "\\'");
         sqlExpression = "REGEXP_REPLACE(" + sqlExpression + ", r'" + pattern + "', '" + replacement + "')";
@@ -92,28 +92,31 @@ regex_remove_pii AS (
 
 -- Step 4: Map to Output Schema & guarantee uniqueness for MERGE
 SELECT
-  type,
-  feedback_record_id,
-  referrer,
-  created,
-  ended,
-  status,
-  subject_page_path,
-  javascript_enabled,
-  user_agent_string,
-  client_id,
-  response_identifier,
-  prompt_type,
-  prompt_value,
-  response_type,
-  final_response_value AS response_value,
-  CAST(NULL AS STRING) AS sentiment,
-  CAST(NULL AS STRING) AS spam_classification,
-  CAST(NULL AS FLOAT64) AS spam_probability,
-  CURRENT_TIMESTAMP() AS batch_processed_ts
+  r.type,
+  r.feedback_record_id,
+  r.referrer,
+  r.created,
+  r.ended,
+  r.status,
+  r.subject_page_path,
+  r.javascript_enabled,
+  r.user_agent_string,
+  r.client_id,
+  r.response_identifier,
+  r.prompt_type,
+  r.prompt_value,
+  r.response_type,
+  r.final_response_value AS response_value,
+  
+  -- PREVENT OVERWRITES: If incremental, pull existing predictions; otherwise set NULL
+  ${incremental() ? "COALESCE(t.sentiment, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS sentiment,
+  ${incremental() ? "COALESCE(t.spam_classification, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS spam_classification,
+  ${incremental() ? "COALESCE(t.spam_probability, CAST(NULL AS FLOAT64))" : "CAST(NULL AS FLOAT64)"} AS spam_probability,
+  ${incremental() ? "COALESCE(t.batch_processed_ts, CURRENT_TIMESTAMP())" : "CURRENT_TIMESTAMP()"} AS batch_processed_ts
 FROM
-  regex_remove_pii
+  regex_remove_pii r
+${incremental() ? `LEFT JOIN ${self()} t ON r.response_identifier = t.response_identifier` : ""}
 QUALIFY ROW_NUMBER() OVER (
-  PARTITION BY response_identifier 
-  ORDER BY created DESC
+  PARTITION BY r.response_identifier 
+  ORDER BY r.created DESC
 ) = 1
