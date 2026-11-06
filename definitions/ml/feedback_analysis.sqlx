@@ -6,17 +6,6 @@ config {
   schema: dataform.projectConfig.vars.target_dataset,
 }
 
-js {
-  // Dynamically compute lookbacks so backfills and increments match perfectly
-  const sourceFilter = (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-    ? `created >= '${dataform.projectConfig.vars.backfill_start_date}' AND created < '${dataform.projectConfig.vars.backfill_end_date}'`
-    : `created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval || 7} DAY)`;
-
-  const targetFilter = (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-    ? `T.created >= '${dataform.projectConfig.vars.backfill_start_date}' AND T.created < '${dataform.projectConfig.vars.backfill_end_date}'`
-    : `T.created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval || 7} DAY)`;
-}
-
 -- Query Gemini and merge the outputs back to the original table
 MERGE ${ref("user_feedback_core")} T
 USING (
@@ -29,8 +18,12 @@ USING (
       ${ref("user_feedback_core")}
     WHERE
       response_type = 'text'
-      -- Process only within the correct dynamic window
-      AND ${sourceFilter}
+      -- Dynamic filter based on backfill dates or incremental interval
+      AND ${
+        (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+          ? `created >= '${dataform.projectConfig.vars.backfill_start_date}' AND created < '${dataform.projectConfig.vars.backfill_end_date}'`
+          : `created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval || 7} DAY)`
+      }
       -- Avoid calling Gemini again for rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
   ),
@@ -109,8 +102,12 @@ USING (
 ) S
 ON T.response_identifier = S.response_identifier
   AND T.created = S.created
-  -- Restricts target partition scanning to only the matching dynamic range
-  AND ${targetFilter}
+  -- Dynamic scan limit to target partitions
+  AND ${
+    (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? `T.created >= '${dataform.projectConfig.vars.backfill_start_date}' AND T.created < '${dataform.projectConfig.vars.backfill_end_date}'`
+      : `T.created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL ${dataform.projectConfig.vars.incremental_load_date_interval || 7} DAY)`
+  }
 WHEN MATCHED THEN
   UPDATE SET
     T.sentiment = S.sentiment,

@@ -8,26 +8,25 @@ config {
     nonNull: ["feedback_record_id", "created", "response_identifier"]
   },
   columns: {
-              type: "The type of feedback record",
-              feedback_record_id: "The feedback record identifier",
-              referrer: "Referrer page",
-              created: "Datetime at which the feedback record was created",
-              ended: "Datetime representing the point at which the feedback form session ended",
-              status: "Indicator of the status of the feedback record session / User Support case",
-              subject_page_path: "Page path from which the feedback journey was started",
-              javascript_enabled: "Boolean indicator of javascript enabled status for submitting client",
-              user_agent_string: "User agent info for submitting client",
-              client_id: "Client identifier",
-              response_identifier: "Unique identifier for an individual response",
-              prompt_type: "Type of feedback prompt",
-              prompt_value: "Feedback prompt",
-              response_type: "Type of feedback response",
-              response_value: "raw Feedback response",
-              sentiment: "Predicted sentiment of feedback response",
-              spam_classification: "Predicted classification of feedback response as spam/not spam",
-              spam_probability: "Confidence (probability) of spam prediction",
-              batch_processed_ts: "batch processing timestamp"
-
+    type: "The type of feedback record",
+    feedback_record_id: "The feedback record identifier",
+    referrer: "Referrer page",
+    created: "Datetime at which the feedback record was created",
+    ended: "Datetime representing the point at which the feedback form session ended",
+    status: "Indicator of the status of the feedback record session / User Support case",
+    subject_page_path: "Page path from which the feedback journey was started",
+    javascript_enabled: "Boolean indicator of javascript enabled status for submitting client",
+    user_agent_string: "User agent info for submitting client",
+    client_id: "Client identifier",
+    response_identifier: "Unique identifier for an individual response",
+    prompt_type: "Type of feedback prompt",
+    prompt_value: "Feedback prompt",
+    response_type: "Type of feedback response",
+    response_value: "raw Feedback response",
+    sentiment: "Predicted sentiment of feedback response",
+    spam_classification: "Predicted classification of feedback response as spam/not spam",
+    spam_probability: "Confidence (probability) of spam prediction",
+    batch_processed_ts: "batch processing timestamp"
   },
   bigquery: {
     partitionBy: "DATE(created)",
@@ -80,6 +79,7 @@ regex_remove_pii AS (
     ${(() => {
       let sqlExpression = "dlp_value";
       (config.pii_regex || []).forEach(rule => {
+        // Safe quote escaping for single quotes
         const pattern = rule.pattern.replace(/'/g, "\\'");
         const replacement = rule.replacement.replace(/'/g, "\\'");
         sqlExpression = "REGEXP_REPLACE(" + sqlExpression + ", r'" + pattern + "', '" + replacement + "')";
@@ -108,7 +108,7 @@ SELECT
   r.response_type,
   r.final_response_value AS response_value,
   
-  -- PREVENT OVERWRITES: If incremental, pull existing predictions; otherwise set NULL
+  -- PRESERVE EXISTING PREDICTIONS: If incremental, keep existing values; otherwise initialize as NULL
   ${incremental() ? "COALESCE(t.sentiment, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS sentiment,
   ${incremental() ? "COALESCE(t.spam_classification, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS spam_classification,
   ${incremental() ? "COALESCE(t.spam_probability, CAST(NULL AS FLOAT64))" : "CAST(NULL AS FLOAT64)"} AS spam_probability,
