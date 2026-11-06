@@ -34,7 +34,7 @@ config {
     
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
       ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
   }
 }
 
