@@ -1,0 +1,132 @@
+config {
+  type: "operations",
+  tags: ["feedback_enrichment"],
+  name: "spam_sentiment_prediction",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+}
+
+/* Query Gemini and merge the outputs back to the original table */
+MERGE ${ref("feedback_analysed")} T
+USING (
+  WITH raw_records AS (
+    SELECT
+      response_identifier,
+      (TRIM(SUBSTR(response_value, 1, 2000))) AS text,
+      created
+    FROM
+      ${ref("feedback_analysed")}
+    WHERE
+      response_type = 'text'
+      -- Dynamic filter based on backfill dates or incremental interval
+      AND ${
+        (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+          ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+          : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      }
+      -- Avoid calling Gemini again for rows that already have predictions
+      AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
+      AND response_value IS NOT NULL 
+      AND LENGTH(TRIM(response_value)) > 0
+
+      --Filter Non-English language feedbacks 
+      -- Must contain at least one English alphabet character
+      AND REGEXP_CONTAINS(response_value, r'[a-zA-Z]')
+
+      -- Reject non-English writing systems globally (keeps spaces, numbers, brackets, punctuation, and emojis)
+    AND NOT REGEXP_CONTAINS(response_value, r'[^\p{Latin}\p{Common}\p{Inherited}]')
+
+    -- Require at least one common English word
+    AND REGEXP_CONTAINS(
+        LOWER(response_value),
+        r'\b(hi|hello|the|and|of|to|is|it|you|that|was|for|on|are|as|with|this|they|at|be|have|from|or|by|one|had|but|not|what|your|can|there|an|each|which|if|will|about|out|many|then|them|these|so|some|her|would|make|like|good|perfect|thanks|great|nice|service|excellent|very|well|love|amazing|happy|recommend|quality|friendly|helpful|bad|worst|broken|damaged|poor|issue|wrong|terrible|disappointed|slow|no|never|error|product|item|delivery|refund|return|app|website|page|work|money|waste|problem|customer|support|charge|buy|bought|order|dvla|hmrc)\b'
+    )
+
+
+    /* 
+      Deduplicate source records on the MERGE keys prior to calling Gemini.
+      This resolves the transactional MERGE safety error and reduces API usage costs.
+    */
+    QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY response_identifier, created
+      ORDER BY created DESC
+    ) = 1
+  ),
+
+  /* Table-Valued Function to query BQML */
+  gemini_predictions AS (
+    SELECT
+      response_identifier,
+      created,
+      result AS gemini_raw
+    FROM
+      AI.GENERATE_TEXT(
+        /* Forces local processing strictly within the europe-west2 (London) datacenter */
+        MODEL `${dataform.projectConfig.vars.staging_project}.${dataform.projectConfig.vars.staging_dataset}.feedback_bq_ml_gemini_model_london`,
+        (
+          SELECT
+            response_identifier,
+            created,
+            CONCAT("""${prompts.feedback_analysis_ml_prompt}""", text) AS prompt
+          FROM
+            raw_records
+        ),
+        STRUCT(
+          '''{
+            "generation_config": {
+              "max_output_tokens": 64,
+              "thinking_config": {
+                "thinking_level": "MINIMAL"
+              },
+              "response_mime_type": "application/json",
+              "response_schema": {
+                "type": "OBJECT",
+                "properties": {
+                  "sentiment": {
+                    "type": "STRING",
+                    "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL"]
+                  },
+                  "spam_classification": {
+                    "type": "STRING",
+                    "enum": ["spam", "not spam"]
+                  },
+                  "spam_probability": {
+                    "type": "NUMBER"
+                  }
+                },
+                "required": [
+                  "sentiment",
+                  "spam_classification",
+                  "spam_probability"
+                ]
+              }
+            }
+          }''' AS model_params
+        )
+      )
+  )
+
+  SELECT
+    response_identifier,
+    created,
+    JSON_VALUE(gemini_raw, '$.sentiment') AS sentiment,
+    JSON_VALUE(gemini_raw, '$.spam_classification') AS spam_classification,
+    CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) AS spam_probability,
+    CURRENT_TIMESTAMP() batch_processed_ts
+  FROM
+    gemini_predictions
+) S
+ON T.response_identifier = S.response_identifier
+  AND T.created = S.created
+  /* Dynamic scan limit to target partitions */
+  AND ${
+    (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "T.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "T.created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+WHEN MATCHED THEN
+  UPDATE SET
+    T.sentiment = S.sentiment,
+    T.spam_classification = S.spam_classification,
+    T.spam_probability = S.spam_probability,
+    T.batch_processed_ts = S.batch_processed_ts

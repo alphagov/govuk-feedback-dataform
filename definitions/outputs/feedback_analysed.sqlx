@@ -1,0 +1,121 @@
+config {
+  type: "incremental",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  name: "feedback_analysed", 
+  uniqueKey: ["response_identifier"],
+  columns: {
+    type: "The type of feedback record",
+    feedback_record_id: "The feedback record identifier",
+    referrer: "Referrer page",
+    created: "Datetime at which the feedback record was created",
+    ended: "Datetime representing the point at which the feedback form session ended",
+    status: "Indicator of the status of the feedback record session / User Support case",
+    subject_page_path: "Page path from which the feedback journey was started",
+    javascript_enabled: "Boolean indicator of javascript enabled status for submitting client",
+    user_agent_string: "User agent info for submitting client",
+    client_id: "Client identifier",
+    response_identifier: "Unique identifier for an individual response",
+    prompt_type: "Type of feedback prompt",
+    prompt_value: "Feedback prompt",
+    response_type: "Type of feedback response",
+    response_value: "raw Feedback response",
+    sentiment: "Predicted sentiment of feedback response",
+    spam_classification: "Predicted classification of feedback response as spam/not spam",
+    spam_probability: "Confidence (probability) of spam prediction",
+    batch_processed_ts: "batch processing timestamp"
+  },
+  bigquery: {
+    partitionBy: "DATE(created)",
+    partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    // FIXED: Keeps 'created' unwrapped to bypass the Dataform T.DATE compiler bug
+    updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
+  }
+}
+
+js {
+  const config = require("includes/config");
+}
+
+/* Step 1: Read raw staging containers */
+WITH base_feedback_containers AS (
+  SELECT * 
+  FROM ${ref("user_feedback_unioned")}
+  WHERE
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        // FIXED JS COMMENT: Uses DATE and targets 'Europe/London' midnight
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+    }
+),
+
+/* Step 2: Merge pre-sanitized responses back */
+dlp_merged AS (
+  SELECT
+    raw.*,
+    COALESCE(clean.dlp_cleaned_value, raw.response_value_raw) AS dlp_value
+  FROM
+    base_feedback_containers AS raw
+  LEFT JOIN
+    ${ref("feedback_dlp_sanitized")} AS clean
+  ON
+    raw.response_identifier = clean.response_identifier
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "AND clean.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND clean.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        // FIXED JS COMMENT: Matches identical target limits in 'Europe/London' timezone
+        : (incremental() ? "AND DATE(clean.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "")
+    }
+),
+
+/* Step 3: Run regex substitution loops */
+regex_remove_pii AS (
+  SELECT
+    *,
+    ${(() => {
+      let sqlExpression = "dlp_value";
+      (config.pii_regex || []).forEach(rule => {
+        // Safe quote escaping for single quotes
+        const pattern = rule.pattern.replace(/'/g, "\\'");
+        const replacement = rule.replacement.replace(/'/g, "\\'");
+        sqlExpression = "REGEXP_REPLACE(" + sqlExpression + ", r'" + pattern + "', '" + replacement + "')";
+      });
+      return sqlExpression;
+    })()} AS final_response_value
+  FROM
+    dlp_merged
+)
+
+/* Step 4: Map to Output Schema & guarantee uniqueness for MERGE */
+SELECT
+  r.type,
+  r.feedback_record_id,
+  r.referrer,
+  r.created,
+  r.ended,
+  r.status,
+  r.subject_page_path,
+  r.javascript_enabled,
+  r.user_agent_string,
+  r.client_id,
+  r.response_identifier,
+  r.prompt_type,
+  r.prompt_value,
+  r.response_type,
+  r.final_response_value AS response_value,
+  
+  /* PRESERVE EXISTING PREDICTIONS: If incremental, keep existing values; otherwise initialize as NULL */
+  ${incremental() ? "COALESCE(t.sentiment, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS sentiment,
+  ${incremental() ? "COALESCE(t.spam_classification, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS spam_classification,
+  ${incremental() ? "COALESCE(t.spam_probability, CAST(NULL AS FLOAT64))" : "CAST(NULL AS FLOAT64)"} AS spam_probability,
+  ${incremental() ? "COALESCE(t.batch_processed_ts, CURRENT_TIMESTAMP())" : "CURRENT_TIMESTAMP()"} AS batch_processed_ts
+FROM
+  regex_remove_pii r
+${incremental() ? `LEFT JOIN ${self()} t ON r.response_identifier = t.response_identifier` : ""}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY r.response_identifier 
+  ORDER BY r.created DESC
+) = 1
