@@ -8,7 +8,7 @@ config {
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
       ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
   }
 }
 
@@ -55,7 +55,7 @@ WITH flattened_responses AS (
     CURRENT_TIMESTAMP() AS batch_processed_ts
 
   FROM
-  -- Source project name is hardcoded, ensuring all environments use only the latest valid live data
+  /*  Source project name is hardcoded, ensuring all environments use only the latest valid live data */
     `govuk-knowledge-graph.smart_survey.responses` AS raw
     LEFT JOIN UNNEST(raw.pages) AS page ON TRUE
     LEFT JOIN UNNEST(page.questions) AS question ON TRUE
@@ -64,21 +64,29 @@ WITH flattened_responses AS (
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? `raw.date_started >= TIMESTAMP('${dataform.projectConfig.vars.backfill_start_date}', 'Europe/London')
-           AND raw.date_started < TIMESTAMP('${dataform.projectConfig.vars.backfill_end_date}', 'Europe/London')`
-        : `raw.date_started >= TIMESTAMP_SUB(
-             CURRENT_TIMESTAMP(),
-             INTERVAL ${
-               incremental()
-                 ? dataform.projectConfig.vars.incremental_load_date_interval
-                 : dataform.projectConfig.vars.historic_load_date_interval
-             } DAY
-           )`
+        ? "raw.date_started >= TIMESTAMP('" + dataform.projectConfig.vars.backfill_start_date + "', 'Europe/London') AND raw.date_started < TIMESTAMP('" + dataform.projectConfig.vars.backfill_end_date + "', 'Europe/London')"
+        // ALIGNED: Evaluates the source raw timestamp to London local date, matching the target filter perfectly (also converted template strings to standard concatenation)
+        : "DATE(raw.date_started, 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY)"
     }
 )
 
 SELECT *
 FROM flattened_responses
+WHERE
+  --Filter Non-English language feedbacks 
+  -- Must contain at least one English alphabet character
+  REGEXP_CONTAINS(response_value_raw, r'[a-zA-Z]')
+
+    -- Reject non-English writing systems globally (keeps spaces, numbers, brackets, punctuation, and emojis)
+    AND NOT REGEXP_CONTAINS(response_value_raw, r'[^\p{Latin}\p{Common}\p{Inherited}]')
+
+    -- Require at least one common English word
+    AND REGEXP_CONTAINS(
+        LOWER(response_value_raw),
+        r'\b(hi|hello|the|and|of|to|is|it|you|that|was|for|on|are|as|with|this|they|at|be|have|from|or|by|one|had|but|not|what|your|can|there|an|each|which|if|will|about|out|many|then|them|these|so|some|her|would|make|like|good|perfect|thanks|great|nice|service|excellent|very|well|love|amazing|happy|recommend|quality|friendly|helpful|bad|worst|broken|damaged|poor|issue|wrong|terrible|disappointed|slow|no|never|error|product|item|delivery|refund|return|app|website|page|work|money|waste|problem|customer|support|charge|buy|bought|order|dvla|hmrc)\b'
+    )
+
+-- Ensure no duplicate response_identifiers reach the BigQuery MERGE step
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY response_identifier 
   ORDER BY created DESC

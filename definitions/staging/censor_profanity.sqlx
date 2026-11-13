@@ -8,7 +8,7 @@ config {
 
 CREATE OR REPLACE FUNCTION ${self()}(text STRING)
 RETURNS STRING AS (
-  -- COALESCE ensures that if the profanity_list table is empty, the original text is returned unmodified
+  /*  COALESCE ensures that if the profanity_list table is empty, the original text is returned unmodified */
   COALESCE(
     REGEXP_REPLACE(
       text,
