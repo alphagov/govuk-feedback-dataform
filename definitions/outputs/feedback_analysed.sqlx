@@ -28,7 +28,7 @@ config {
   bigquery: {
     partitionBy: "DATE(created)",
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
-    // FIXED: Keeps 'created' unwrapped to bypass the Dataform T.DATE compiler bug
+    requirePartitionFilter: true,
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
       ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
       : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
@@ -47,7 +47,6 @@ WITH base_feedback_containers AS (
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
         ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-        // FIXED JS COMMENT: Uses DATE and targets 'Europe/London' midnight
         : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
     }
 ),
@@ -66,7 +65,6 @@ dlp_merged AS (
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
         ? "AND clean.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND clean.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-        // FIXED JS COMMENT: Matches identical target limits in 'Europe/London' timezone
         : (incremental() ? "AND DATE(clean.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "")
     }
 ),
