@@ -63,41 +63,12 @@ USING (
           SELECT
             response_identifier,
             created,
-            CONCAT("""${prompts.feedback_analysis_ml_prompt}""", text) AS prompt
+            CONCAT(r"""${prompts.feedback_analysis_ml_prompt}""", text) AS prompt
           FROM
             raw_records
         ),
         STRUCT(
-          '''{
-            "generation_config": {
-              "max_output_tokens": 64,
-              "thinking_config": {
-                "thinking_level": "MINIMAL"
-              },
-              "response_mime_type": "application/json",
-              "response_schema": {
-                "type": "OBJECT",
-                "properties": {
-                  "sentiment": {
-                    "type": "STRING",
-                    "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL"]
-                  },
-                  "spam_classification": {
-                    "type": "STRING",
-                    "enum": ["spam", "not spam"]
-                  },
-                  "spam_probability": {
-                    "type": "NUMBER"
-                  }
-                },
-                "required": [
-                  "sentiment",
-                  "spam_classification",
-                  "spam_probability"
-                ]
-              }
-            }
-          }''' AS model_params
+          r'''${prompts.feedback_analysis_model_params}''' AS model_params
         )
       )
   )
@@ -113,7 +84,9 @@ USING (
     gemini_predictions
     -- Only process successful Gemini responses
   WHERE gemini_status = ''
-    AND gemini_raw IS NOT NULL
+    AND JSON_VALUE(gemini_raw, '$.sentiment') IS NOT NULL
+    AND JSON_VALUE(gemini_raw, '$.spam_classification') IS NOT NULL
+    AND SAFE_CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64) IS NOT NULL
 ) S
 ON T.response_identifier = S.response_identifier
   AND T.created = S.created
