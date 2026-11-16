@@ -1,4 +1,4 @@
-// BQ ML LLM prompts & model configs
+// BQ ML LLM prompts
 
 const feedback_analysis_ml_prompt = `Classify this GOV.UK feedback using British English and UK context.
 
@@ -18,38 +18,6 @@ Return valid JSON with sentiment, spam_classification and spam_probability (0-1)
 
 Feedback: `;
 
-
-const feedback_analysis_model_params = JSON.stringify({
-  generation_config: {
-    max_output_tokens: 128,
-    thinking_config: {
-      thinking_level: "MINIMAL",
-    },
-    response_mime_type: "application/json",
-    response_schema: {
-      type: "OBJECT",
-      properties: {
-        sentiment: {
-          type: "STRING",
-          enum: ["POSITIVE", "NEGATIVE", "NEUTRAL"],
-        },
-        spam_classification: {
-          type: "STRING",
-          enum: ["spam", "not spam"],
-        },
-        spam_probability: {
-          type: "NUMBER",
-          minimum: 0,
-          maximum: 1,
-          description: "Confidence between 0 and 1 that the feedback is spam.",
-        },
-      },
-      required: ["sentiment", "spam_classification", "spam_probability"],
-    },
-  },
-});
-
 module.exports = {
-  feedback_analysis_ml_prompt,
-  feedback_analysis_model_params,
+  feedback_analysis_ml_prompt
 };
