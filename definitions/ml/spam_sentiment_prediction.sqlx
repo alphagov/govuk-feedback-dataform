@@ -115,6 +115,9 @@ USING (
     CURRENT_TIMESTAMP() batch_processed_ts
   FROM
     gemini_predictions
+    -- Only process successful Gemini responses
+  WHERE gemini_status = ''
+    AND gemini_raw IS NOT NULL
 ) S
 ON T.response_identifier = S.response_identifier
   AND T.created = S.created
