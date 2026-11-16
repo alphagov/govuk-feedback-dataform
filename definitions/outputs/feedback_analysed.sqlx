@@ -112,7 +112,16 @@ SELECT
   ${incremental() ? "COALESCE(t.batch_processed_ts, CURRENT_TIMESTAMP())" : "CURRENT_TIMESTAMP()"} AS batch_processed_ts
 FROM
   regex_remove_pii r
-${incremental() ? `LEFT JOIN ${self()} t ON r.response_identifier = t.response_identifier` : ""}
+${
+  incremental()
+    ? `LEFT JOIN ${self()} t ON r.response_identifier = t.response_identifier
+       AND ${
+         (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+           ? "t.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND t.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+           : "t.created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
+       }`
+    : ""
+}
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY r.response_identifier 
   ORDER BY r.created DESC
