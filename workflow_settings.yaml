@@ -16,7 +16,7 @@ vars:
 
   # Date filters
   historic_load_date_interval: "7" # used during the adhoc one off initial load only
-  incremental_load_date_interval: "7" # Merges the inserts, updates, and deletes for the past seven days
+  incremental_load_date_interval: "1" # Merges the inserts, updates, and deletes for the past seven days
   partitionExpirationDays: "365"
 
   # Backfill overrides (set to empty strings by default)
