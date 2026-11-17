@@ -20,7 +20,7 @@ USING (
     SELECT
       response_identifier,
       response_value,
-      -- Replaces one or more consecutive asterisks with ' censored '
+      -- Replaces one or more consecutive asterisks with ' censored ' , to bypass language filter blockages
       REGEXP_REPLACE(response_value, r'\*+', ' censored ') AS cleaned_response_value,
       response_type,
       response_language,
