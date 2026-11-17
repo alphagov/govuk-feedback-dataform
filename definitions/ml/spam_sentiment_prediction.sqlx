@@ -107,7 +107,7 @@ USING (
               }
             ],
             "generation_config": {
-              "max_output_tokens": 64,
+              "max_output_tokens": 128,
               "thinking_config": {
                 "thinking_level": "MINIMAL"
               },
