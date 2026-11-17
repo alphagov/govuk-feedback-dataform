@@ -1,0 +1,47 @@
+js {
+  const {
+    englishLanguageFilter
+  } = require("/includes/language_filters.js");
+}
+
+config {
+  type: "operations",
+  tags: ["feedback_enrichment"],
+  name: "local_spam_filtering",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+}
+
+-- Locally catch and mark gibberish, run-on text, or PII redacted records as spam
+UPDATE ${ref("feedback_analysed")}
+SET
+  sentiment = 'NEGATIVE',
+  spam_classification = 'spam',
+  spam_probability = 1.0,
+  batch_processed_ts = CURRENT_TIMESTAMP()
+WHERE
+  response_type = 'text'
+  AND response_language = 'eng'
+  -- Target only unprocessed records
+  AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
+  AND response_value IS NOT NULL
+  AND LENGTH(TRIM(response_value)) > 0
+  
+  -- Dynamic filter based on backfill dates or incremental interval
+  AND ${
+    (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+  
+  -- Local filtering rules
+  AND (
+    -- Rule A: Fails custom English filter (usually due to a complete lack of spaces)
+    NOT ${englishLanguageFilter("response_value")}
+    
+    -- Rule B: Massive continuous string of text with zero spaces (longer than 80 chars)
+    OR (LENGTH(TRIM(response_value)) >= 80 AND NOT REGEXP_CONTAINS(TRIM(response_value), r'\s'))
+    
+    -- Rule C: Contains redacted PII placeholders (like [DL###] or [CC###]) alongside run-on text
+    OR (REGEXP_CONTAINS(response_value, r'\[(DL|CC)###\]') AND LENGTH(TRIM(response_value)) > 100)
+  )
