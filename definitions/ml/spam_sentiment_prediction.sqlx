@@ -62,10 +62,10 @@ USING (
       COALESCE(
         JSON_VALUE(full_response, '$.promptFeedback.blockReason') IS NOT NULL
         OR JSON_VALUE(full_response, '$.prompt_feedback.block_reason') IS NOT NULL
-        OR JSON_VALUE(full_response, '$.candidates 0 .finishReason') IN (
+        OR JSON_VALUE(full_response, '$.candidates[0].finishReason') IN (
           'SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'
         )
-        OR JSON_VALUE(full_response, '$.candidates 0 .finish_reason') IN (
+        OR JSON_VALUE(full_response, '$.candidates[0].finish_reason') IN (
           'SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'
         )
         OR REGEXP_CONTAINS(
