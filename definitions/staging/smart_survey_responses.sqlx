@@ -72,7 +72,7 @@ WITH flattened_responses AS (
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
         ? "raw.date_started >= TIMESTAMP('" + dataform.projectConfig.vars.backfill_start_date + "', 'Europe/London') AND raw.date_started < TIMESTAMP('" + dataform.projectConfig.vars.backfill_end_date + "', 'Europe/London')"
-        // ALIGNED: Evaluates the source raw timestamp to London local date, matching the target filter perfectly (also converted template strings to standard concatenation)
+        // Evaluates the source raw timestamp to London local date, matching the target filter perfectly (also converted template strings to standard concatenation)
         : "DATE(raw.date_started, 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY)"
     }
 )

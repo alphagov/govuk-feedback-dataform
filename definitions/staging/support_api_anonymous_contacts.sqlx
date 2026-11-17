@@ -74,7 +74,7 @@ WITH unpivoted_contacts AS (
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
         ? "raw.created_at >= TIMESTAMP('" + dataform.projectConfig.vars.backfill_start_date + "', 'Europe/London') AND raw.created_at < TIMESTAMP('" + dataform.projectConfig.vars.backfill_end_date + "', 'Europe/London')"
-        // ALIGNED: Evaluates the source raw timestamp to London local date, ensuring a perfect match with the config target filter
+        // Evaluates the source raw timestamp to London local date, ensuring a perfect match with the config target filter
         : "DATE(raw.created_at, 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY)"
     }
 )
