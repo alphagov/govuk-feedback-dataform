@@ -16,38 +16,16 @@ config {
 /* Query Gemini and merge the outputs back to the original table */
 MERGE ${ref("feedback_analysed")} T
 USING (
-  -- 1. Preprocess the feedback to replace asterisks with a readable English word
-  WITH cleaned_raw_records AS (
+  WITH raw_records AS (
+ 
     SELECT
       response_identifier,
-      response_value,
-      -- To bypass Gemini language filter blockages
-      -- 1. Replaces one or more consecutive asterisks with ' censored '
-      -- 2. Strip out credit card masks [CC###] and trailing repeating digits
-      REGEXP_REPLACE(
-      REGEXP_REPLACE(response_value, r'\[CC###\]|1{4,}', ''), 
-      r'\*+', 
-      ' censored '
-    ) AS cleaned_response_value,
-      response_type,
-      response_language,
-      created,
-      sentiment,
-      spam_classification,
-      spam_probability
-    FROM
-      ${ref("feedback_analysed")}
-  ),
-
-  -- 2. Filter and deduplicate using the cleaned text representation
-  raw_records AS (
-    SELECT
-      response_identifier,
-      (TRIM(SUBSTR(cleaned_response_value, 1, 2000))) AS text,
+      -- Replaces *** with 'censored' to bypass Gemini language filter blockages
+      REGEXP_REPLACE(TRIM(SUBSTR(response_value, 1, 2000)), r'\*+', ' censored ') AS text,
       created
     FROM
-      cleaned_raw_records
-
+      ${ref("feedback_analysed")}
+ 
     WHERE
       response_type = 'text'
       -- Process only English language feedbacks
@@ -59,13 +37,13 @@ USING (
           ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
           : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
       }
-      -- Avoid calling Gemini again for rows that already have predictions
+      -- Skip rows that already have predictions
       AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
       AND response_value IS NOT NULL
       AND LENGTH(TRIM(response_value)) > 0
 
-      -- Run language filter on the cleaned representation so asterisks don't cause failures
-      AND ${englishLanguageFilter("cleaned_response_value")}
+      -- English language filter (run on safe, regex-substituted text)
+      AND ${englishLanguageFilter("REGEXP_REPLACE(response_value, r'\\*+', ' censored ')")}
 
     /*
       Deduplicate source records on the MERGE keys prior to calling Gemini.
