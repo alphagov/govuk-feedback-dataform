@@ -31,7 +31,7 @@ WITH base_records AS (
       ? "LEFT JOIN " + self() + " AS target ON raw.response_identifier = target.response_identifier AND " + (
           (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
             ? "target.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND target.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-            // ALIGNED: Target self-check scans identical London-local DATE boundaries
+            // Target self-check scans identical London-local DATE boundaries
             : "DATE(target.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
         )
       : ""
