@@ -48,7 +48,7 @@ WITH base_records AS (
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
         ? "AND raw.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND raw.created < '" + dataform.projectConfig.vars.backfill_end_date + "'" + (incremental() ? " AND target.response_identifier IS NULL" : "")
         : (incremental()
-            // ALIGNED: Converts current date checks to use the explicitly-mapped 'Europe/London' timezone
+            //  Converts current date checks to use the explicitly-mapped 'Europe/London' timezone
             ? "AND DATE(raw.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AND target.response_identifier IS NULL"
             : "AND DATE(raw.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.historic_load_date_interval + " DAY)")
     }
