@@ -20,8 +20,14 @@ USING (
     SELECT
       response_identifier,
       response_value,
-      -- Replaces one or more consecutive asterisks with ' censored ' , to bypass language filter blockages
-      REGEXP_REPLACE(response_value, r'\*+', ' censored ') AS cleaned_response_value,
+      -- To bypass Gemini language filter blockages
+      -- 1. Replaces one or more consecutive asterisks with ' censored '
+      -- 2. Strip out credit card masks [CC###] and trailing repeating digits
+      REGEXP_REPLACE(
+      REGEXP_REPLACE(response_value, r'\[CC###\]|1{4,}', ''), 
+      r'\*+', 
+      ' censored '
+    ) AS cleaned_response_value,
       response_type,
       response_language,
       created,
