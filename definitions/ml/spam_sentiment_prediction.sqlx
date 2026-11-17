@@ -15,17 +15,35 @@ config {
 /* Query Gemini and merge the outputs back to the original table */
 MERGE ${ref("feedback_analysed")} T
 USING (
-  WITH raw_records AS (
+  -- 1. Preprocess the feedback to replace asterisks with a readable English word
+  WITH cleaned_raw_records AS (
     SELECT
       response_identifier,
-      (TRIM(SUBSTR(response_value, 1, 2000))) AS text,
-      created
+      response_value,
+      -- Replaces one or more consecutive asterisks with ' censored '
+      REGEXP_REPLACE(response_value, r'\*+', ' censored ') AS cleaned_response_value,
+      response_type,
+      response_language,
+      created,
+      sentiment,
+      spam_classification,
+      spam_probability
     FROM
       ${ref("feedback_analysed")}
+  ),
+
+  -- 2. Filter and deduplicate using the cleaned text representation
+  raw_records AS (
+    SELECT
+      response_identifier,
+      (TRIM(SUBSTR(cleaned_response_value, 1, 2000))) AS text,
+      created
+    FROM
+      cleaned_raw_records
 
     WHERE
       response_type = 'text'
-      --Process only English language feedbacks
+      -- Process only English language feedbacks
       and response_language = 'eng'
       
       -- Dynamic filter based on backfill dates or incremental interval
@@ -39,8 +57,8 @@ USING (
       AND response_value IS NOT NULL
       AND LENGTH(TRIM(response_value)) > 0
 
-      -- English language filter
-      AND ${englishLanguageFilter("response_value")}
+      -- Run language filter on the cleaned representation so asterisks don't cause failures
+      AND ${englishLanguageFilter("cleaned_response_value")}
 
     /*
       Deduplicate source records on the MERGE keys prior to calling Gemini.
