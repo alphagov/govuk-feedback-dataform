@@ -81,7 +81,7 @@ WITH unpivoted_contacts AS (
 
 SELECT *
 FROM unpivoted_contacts
-WHERE
+WHERE 
     -- English language filter
     ${englishLanguageFilter("response_value_raw")}
 
