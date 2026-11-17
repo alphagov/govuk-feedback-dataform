@@ -13,9 +13,9 @@ RETURNS STRING AS (
     REGEXP_REPLACE(
       text,
       (
-        SELECT CONCAT(r'(?i)\b(', STRING_AGG(REGEXP_REPLACE(phrase, r'([-\\^$*+?.()|[\]{}])', r'\\\1'), '|'), r')\b')
+        SELECT CONCAT(r'(?i)\b(', STRING_AGG(REGEXP_REPLACE(TRIM(phrase), r'([-\\^$*+?.()|[\]{}])', r'\\\1'), '|'), r')\b')
         FROM ${ref("profanity_list")}
-        WHERE phrase IS NOT NULL AND phrase != ''
+        WHERE phrase IS NOT NULL AND TRIM(phrase) != ''
       ),
       '****'
     ),
