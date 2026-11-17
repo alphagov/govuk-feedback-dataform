@@ -40,6 +40,8 @@ WITH base_records AS (
   WHERE
     raw.response_type = 'text'
     AND NULLIF(TRIM(raw.response_value_raw), '') IS NOT NULL
+    --ignore non-english feedbacks
+    AND language = 'eng'
 
     /*  Date interval toggle and anti-join check */
     ${

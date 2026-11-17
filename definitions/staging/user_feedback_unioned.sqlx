@@ -1,3 +1,9 @@
+js {
+  const {
+    englishLanguageFilter
+  } = require("/includes/language_filters.js");
+}
+
 config {
   type: "incremental",
   database: dataform.projectConfig.vars.staging_project,
@@ -45,6 +51,10 @@ unioned_sources AS (
 
 SELECT 
   * EXCEPT(batch_processed_ts),
+    CASE 
+    WHEN ${englishLanguageFilter("response_value_raw")} THEN 'eng'
+    ELSE 'non-eng'
+  END AS language,
   CURRENT_TIMESTAMP() AS batch_processed_ts
 FROM unioned_sources
 WHERE 

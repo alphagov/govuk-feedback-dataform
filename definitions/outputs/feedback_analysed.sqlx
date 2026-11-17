@@ -104,7 +104,7 @@ SELECT
   r.prompt_value,
   r.response_type,
   r.final_response_value AS response_value,
-  
+  r.language,
   /* PRESERVE EXISTING PREDICTIONS: If incremental, keep existing values; otherwise initialize as NULL */
   ${incremental() ? "COALESCE(t.sentiment, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS sentiment,
   ${incremental() ? "COALESCE(t.spam_classification, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS spam_classification,

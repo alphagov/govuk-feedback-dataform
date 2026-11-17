@@ -22,8 +22,12 @@ USING (
       created
     FROM
       ${ref("feedback_analysed")}
+
     WHERE
       response_type = 'text'
+      --Process only English language feedbacks
+      and language = 'eng'
+      
       -- Dynamic filter based on backfill dates or incremental interval
       AND ${
         (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
