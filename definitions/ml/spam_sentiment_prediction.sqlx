@@ -10,6 +10,7 @@ config {
   name: "spam_sentiment_prediction",
   database: dataform.projectConfig.vars.target_project,
   schema: dataform.projectConfig.vars.target_dataset,
+  dependencies: ["local_spam_filtering"]
 }
 
 /* Query Gemini and merge the outputs back to the original table */
