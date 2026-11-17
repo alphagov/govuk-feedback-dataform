@@ -20,6 +20,7 @@ config {
     prompt_value: "Feedback prompt",
     response_type: "Type of feedback response",
     response_value: "raw Feedback response",
+    response_language: "The classified language of the raw feedback response. Values are either 'eng' (English) or 'non-eng' (non-English)",
     sentiment: "Predicted sentiment of feedback response",
     spam_classification: "Predicted classification of feedback response as spam/not spam",
     spam_probability: "Confidence (probability) of spam prediction",
@@ -104,7 +105,7 @@ SELECT
   r.prompt_value,
   r.response_type,
   r.final_response_value AS response_value,
-  r.language,
+  r.response_language,
   /* PRESERVE EXISTING PREDICTIONS: If incremental, keep existing values; otherwise initialize as NULL */
   ${incremental() ? "COALESCE(t.sentiment, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS sentiment,
   ${incremental() ? "COALESCE(t.spam_classification, CAST(NULL AS STRING))" : "CAST(NULL AS STRING)"} AS spam_classification,

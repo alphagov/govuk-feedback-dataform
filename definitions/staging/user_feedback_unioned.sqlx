@@ -54,7 +54,7 @@ SELECT
     CASE 
     WHEN ${englishLanguageFilter("response_value_raw")} THEN 'eng'
     ELSE 'non-eng'
-  END AS language,
+  END AS response_language,
   CURRENT_TIMESTAMP() AS batch_processed_ts
 FROM unioned_sources
 WHERE 
