@@ -13,9 +13,15 @@ config {
 }
 
 /*
-Locally at the Bigquery level detect and mark gibberish, run-on text, or PII-redacted records as spam. 
-Because Gemini blocks such feedback, filtering these records upfront avoids unnecessary API calls 
-and prevents sending them to Gemini entirely.
+Problem:
+The Gemini model blocking sentiment and spam classification for certain feedback (such as gibberish, run-on text, or PII-redacted records). 
+Because these blocked records were not updated in BigQuery with their spam and sentiment classification status, 
+they were repeatedly processed and sent to Gemini during every run, creating an infinite loop.
+
+Solution:
+We will locally detect and mark gibberish, run-on text, or PII-redacted records as spam at the BigQuery level. 
+Filtering these records upfront avoids unnecessary API calls, prevents sending them to Gemini entirely, 
+and significantly reduces AI token usage.
 */
 
 UPDATE ${ref("feedback_analysed")}
