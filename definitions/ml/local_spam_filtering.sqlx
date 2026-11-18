@@ -12,7 +12,12 @@ config {
   schema: dataform.projectConfig.vars.target_dataset,
 }
 
--- Locally catch and mark gibberish, run-on text, or PII redacted records as spam
+/*
+Locally at the Bigquery level detect and mark gibberish, run-on text, or PII-redacted records as spam. 
+Because Gemini blocks such feedback, filtering these records upfront avoids unnecessary API calls 
+and prevents sending them to Gemini entirely.
+*/
+
 UPDATE ${ref("feedback_analysed")}
 SET
   sentiment = 'NEGATIVE',
