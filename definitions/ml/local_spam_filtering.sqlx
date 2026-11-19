@@ -50,9 +50,9 @@ WHERE
     -- Rule A: Fails custom English filter (usually due to a complete lack of spaces)
     NOT ${englishLanguageFilter("response_value")}
     
-    -- Rule B: Massive continuous string of text with zero spaces (longer than 80 chars)
-    OR (LENGTH(TRIM(response_value)) >= 80 AND NOT REGEXP_CONTAINS(TRIM(response_value), r'\s'))
+    -- Rule B: Massive continuous string of text with zero spaces (longer than 100 chars)
+    OR (LENGTH(TRIM(response_value)) >= 100 AND NOT REGEXP_CONTAINS(TRIM(response_value), r'\s'))
     
-    -- Rule C: Contains redacted PII placeholders (like [DL###] or [CC###]) alongside run-on text
-    OR (REGEXP_CONTAINS(response_value, r'\[(DL|CC)###\]') AND LENGTH(TRIM(response_value)) > 100)
+    -- Rule C: Contains redacted PII placeholders alongside actual run-on text (e.g., a block of 100 characters with no spaces)
+    OR (REGEXP_CONTAINS(response_value, r'\[(DL|CC)###\]') AND REGEXP_CONTAINS(response_value, r'[^\s]{100,}'))
   )
