@@ -16,8 +16,8 @@ config {
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
     requirePartitionFilter: true,
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-      ? "DATE(TIMESTAMP(created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(T.created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "DATE(TIMESTAMP(created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      ? "DATE(created) >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(T.created) < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "DATE(created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
   }
 }
 
@@ -27,8 +27,8 @@ WITH smart_survey_parsed AS (
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? "DATE(TIMESTAMP(created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-        : (incremental() ? "DATE(TIMESTAMP(created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+        ? "DATE(created) >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(created) < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
     }
 ),
 
@@ -38,8 +38,8 @@ support_api_parsed AS (
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? "DATE(TIMESTAMP(created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-        : (incremental() ? "DATE(TIMESTAMP(created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
+        ? "DATE(created) >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(created) < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+        : (incremental() ? "DATE(created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)" : "TRUE")
     }
 ),
 
