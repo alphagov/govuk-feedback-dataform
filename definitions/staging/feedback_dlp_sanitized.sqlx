@@ -10,8 +10,8 @@ config {
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
     requirePartitionFilter: true,
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
+      ? "DATE(TIMESTAMP(created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(T.created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+      : "DATE(TIMESTAMP(created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
   }
 }
 
@@ -30,9 +30,9 @@ WITH base_records AS (
     incremental()
       ? "LEFT JOIN " + self() + " AS target ON raw.response_identifier = target.response_identifier AND " + (
           (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-            ? "target.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND target.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
+            ? "DATE(TIMESTAMP(target.created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(target.created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'"
             // Target self-check scans identical London-local DATE boundaries
-            : "DATE(target.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+            : "DATE(TIMESTAMP(target.created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
         )
       : ""
   }
@@ -46,11 +46,11 @@ WITH base_records AS (
     /*  Date interval toggle and anti-join check */
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? "AND raw.created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND raw.created < '" + dataform.projectConfig.vars.backfill_end_date + "'" + (incremental() ? " AND target.response_identifier IS NULL" : "")
+        ? "AND DATE(TIMESTAMP(raw.created), 'Europe/London') >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND DATE(TIMESTAMP(raw.created), 'Europe/London') < '" + dataform.projectConfig.vars.backfill_end_date + "'" + (incremental() ? " AND target.response_identifier IS NULL" : "")
         : (incremental()
             //  Converts current date checks to use the explicitly-mapped 'Europe/London' timezone
-            ? "AND DATE(raw.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AND target.response_identifier IS NULL"
-            : "AND DATE(raw.created) >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.historic_load_date_interval + " DAY)")
+            ? "AND DATE(TIMESTAMP(raw.created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AND target.response_identifier IS NULL"
+            : "AND DATE(TIMESTAMP(raw.created), 'Europe/London') >= DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.historic_load_date_interval + " DAY)")
     }
 
   /*  Guarantee single row per response_identifier to prevent MERGE failure */
