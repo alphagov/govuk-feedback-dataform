@@ -1,0 +1,39 @@
+config {
+  type: "operations",
+  tags: ["feedback_enrichment"],
+  name: "post_gemini_spam_fallback",
+  dependencies: ["spam_sentiment_gemini_prediction"],
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+}
+
+/*
+Post-Gemini Catch-All Fallback:
+After Step 1 (local_spam_filtering) and Step 2 (Gemini classification) have finished, 
+any remaining unprocessed records are updated as spam as part this script, 
+preventing Gemini-blocked records from entering an infinite retry loop.
+
+For example, feedback entries like the one below are updated by this script:
+"dhdhjfgah*3*#*@*@(´÷´€´vvjnzbfnanendmmsma"
+*/
+
+UPDATE ${ref("feedback_analysed")}
+SET
+  sentiment = 'NEGATIVE',
+  spam_classification = 'spam',
+  spam_probability = 1.0,
+  batch_processed_ts = CURRENT_TIMESTAMP()
+WHERE
+  response_type = 'text'
+  AND response_language = 'eng'
+  -- Target all remaining records still unprocessed after Step 1 and Step 2
+  AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
+  AND response_value IS NOT NULL
+  AND LENGTH(TRIM(response_value)) > 0
+
+  -- Dynamic filter based on backfill dates or incremental interval
+  AND ${
+    (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+      : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }

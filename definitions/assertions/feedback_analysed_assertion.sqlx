@@ -1,0 +1,42 @@
+config {
+  type: "assertion",
+  name: "feedback_analysed_assertion",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  dependencies: ["feedback_analysed"],
+  tags: ["data_quality"]
+}
+
+WITH check_violations AS (
+  SELECT
+    response_identifier,
+    created,
+    response_language,
+    response_value,
+    response_type, 
+    ROW_NUMBER() OVER (
+      PARTITION BY response_identifier 
+      ORDER BY created DESC
+    ) as row_num
+  FROM
+    ${ref("feedback_analysed")} 
+  WHERE
+    ${
+      (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+        ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+        : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
+    }
+)
+
+SELECT *
+FROM check_violations
+WHERE
+  response_language = 'eng'
+  AND response_type = 'text'
+  AND (
+    response_identifier IS NULL
+    OR created IS NULL
+    OR response_value IS NULL 
+    OR LENGTH(TRIM(response_value)) = 0
+    OR row_num > 1
+  )
