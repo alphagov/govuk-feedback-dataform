@@ -6,9 +6,10 @@ config {
   bigquery: {
     partitionBy: "DATE(created)",
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    requirePartitionFilter: true,
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND T.created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+      : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
   }
 }
 
@@ -55,7 +56,7 @@ WITH flattened_responses AS (
     CURRENT_TIMESTAMP() AS batch_processed_ts
 
   FROM
-  -- Source project name is hardcoded, ensuring all environments use only the latest valid live data
+  /*  Source project name is hardcoded, ensuring all environments use only the latest valid live data */
     `govuk-knowledge-graph.smart_survey.responses` AS raw
     LEFT JOIN UNNEST(raw.pages) AS page ON TRUE
     LEFT JOIN UNNEST(page.questions) AS question ON TRUE
@@ -64,21 +65,15 @@ WITH flattened_responses AS (
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? `raw.date_started >= TIMESTAMP('${dataform.projectConfig.vars.backfill_start_date}', 'Europe/London')
-           AND raw.date_started < TIMESTAMP('${dataform.projectConfig.vars.backfill_end_date}', 'Europe/London')`
-        : `raw.date_started >= TIMESTAMP_SUB(
-             CURRENT_TIMESTAMP(),
-             INTERVAL ${
-               incremental()
-                 ? dataform.projectConfig.vars.incremental_load_date_interval
-                 : dataform.projectConfig.vars.historic_load_date_interval
-             } DAY
-           )`
+        ? "raw.date_started >= TIMESTAMP(CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME), 'Europe/London') AND raw.date_started < TIMESTAMP(CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME), 'Europe/London')"
+        : "raw.date_started >= TIMESTAMP(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY), 'Europe/London')"
     }
 )
 
 SELECT *
 FROM flattened_responses
+
+-- Ensure no duplicate response_identifiers reach the BigQuery MERGE step
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY response_identifier 
   ORDER BY created DESC

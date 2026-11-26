@@ -1,0 +1,190 @@
+js {
+  const {
+    englishLanguageFilter
+  } = require("/includes/language_filters.js");
+}
+
+config {
+  type: "operations",
+  tags: ["feedback_enrichment"],
+  name: "spam_sentiment_gemini_prediction",
+  database: dataform.projectConfig.vars.target_project,
+  schema: dataform.projectConfig.vars.target_dataset,
+  dependencies: ["pre_gemini_spam_filtering"]
+}
+
+/* Query Gemini and merge the outputs back to the original table */
+MERGE ${ref("feedback_analysed")} T
+USING (
+  WITH raw_records AS (
+ 
+    SELECT
+      response_identifier,
+      -- Replaces *** with 'censored' to bypass Gemini language filter blockages
+      REGEXP_REPLACE(TRIM(SUBSTR(response_value, 1, 2000)), r'\*+', ' censored ') AS text,
+      created
+    FROM
+      ${ref("feedback_analysed")}
+ 
+    WHERE
+      response_type = 'text'
+      -- Process only English language feedbacks
+      and response_language = 'eng'
+      
+      -- Dynamic filter based on backfill dates or incremental interval
+      AND ${
+        (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+          ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+          : "created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      }
+      -- Skip rows that already have predictions
+      AND (sentiment IS NULL OR spam_classification IS NULL OR spam_probability IS NULL)
+      AND response_value IS NOT NULL
+      AND LENGTH(TRIM(response_value)) > 0
+
+      -- English language filter (run on safe, regex-substituted text)
+      AND ${englishLanguageFilter("REGEXP_REPLACE(response_value, r'\\*+', ' censored ')")}
+
+    /*
+      Deduplicate source records on the MERGE keys prior to calling Gemini.
+      This resolves the transactional MERGE safety error and reduces API usage costs.
+    */
+    QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY response_identifier, created
+      ORDER BY created DESC
+    ) = 1
+  ),
+
+  /* Table-Valued Function to query BQML */
+  gemini_predictions AS (
+    SELECT
+      response_identifier,
+      created,
+      result AS gemini_raw,
+      status AS gemini_status,
+      COALESCE(
+        JSON_VALUE(full_response, '$.promptFeedback.blockReason') IS NOT NULL
+        OR JSON_VALUE(full_response, '$.prompt_feedback.block_reason') IS NOT NULL
+        OR JSON_VALUE(full_response, '$.candidates[0].finishReason') IN (
+          'SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'
+        )
+        OR JSON_VALUE(full_response, '$.candidates[0].finish_reason') IN (
+          'SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'RECITATION'
+        )
+        OR REGEXP_CONTAINS(
+          LOWER(IFNULL(status, '')),
+          r'(safety|prohibited|blocked|responsible ai|filtered)'
+        ),
+        FALSE
+      ) AS is_safety_blocked
+    FROM
+      AI.GENERATE_TEXT(
+        /* Forces local processing strictly within the europe-west2 (London) datacenter */
+        MODEL `${dataform.projectConfig.vars.staging_project}.${dataform.projectConfig.vars.staging_dataset}.feedback_bq_ml_gemini_model_london`,
+        (
+          SELECT
+            response_identifier,
+            created,
+            CONCAT(r"""${prompts.feedback_analysis_ml_prompt}""", text) AS prompt
+          FROM
+            raw_records
+        ),
+        STRUCT(
+          '''{
+            "safety_settings": [
+              {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_ONLY_HIGH"
+              },
+              {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+              },
+              {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_ONLY_HIGH"
+              },
+              {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"
+              }
+            ],
+            "generation_config": {
+              "max_output_tokens": 128,
+              "thinking_config": {
+                "thinking_level": "MINIMAL"
+              },
+              "response_mime_type": "application/json",
+              "response_schema": {
+                "type": "OBJECT",
+                "properties": {
+                  "sentiment": {
+                    "type": "STRING",
+                    "enum": ["POSITIVE", "NEGATIVE", "NEUTRAL"]
+                  },
+                  "spam_classification": {
+                    "type": "STRING",
+                    "enum": ["spam", "not spam"]
+                  },
+                  "spam_probability": {
+                    "type": "NUMBER"
+                  }
+                },
+                "required": [
+                  "sentiment",
+                  "spam_classification",
+                  "spam_probability"
+                ]
+              }
+            }
+          }''' AS model_params
+        )
+      )
+  )
+
+  SELECT
+    response_identifier,
+    created,
+    CASE
+      WHEN gemini_status = '' AND gemini_raw IS NOT NULL
+        THEN JSON_VALUE(gemini_raw, '$.sentiment')
+      WHEN is_safety_blocked
+        THEN 'NEGATIVE'
+    END AS sentiment,
+    CASE
+      WHEN gemini_status = '' AND gemini_raw IS NOT NULL
+        THEN JSON_VALUE(gemini_raw, '$.spam_classification')
+      WHEN is_safety_blocked
+        THEN 'not spam'
+    END AS spam_classification,
+    CASE
+      WHEN gemini_status = '' AND gemini_raw IS NOT NULL
+        THEN SAFE_CAST(JSON_VALUE(gemini_raw, '$.spam_probability') AS FLOAT64)
+      WHEN is_safety_blocked
+        THEN 0.0
+    END AS spam_probability,
+    CURRENT_TIMESTAMP() AS batch_processed_ts
+  FROM
+    gemini_predictions
+  -- Process valid Gemini responses AND safety-blocked records (transient API errors stay NULL to retry next run)
+  WHERE (
+      gemini_status = ''
+      AND gemini_raw IS NOT NULL
+      AND JSON_VALUE(gemini_raw, '$.sentiment') IS NOT NULL
+    )
+    OR is_safety_blocked
+) S
+ON T.response_identifier = S.response_identifier
+  AND T.created = S.created
+  /* Dynamic scan limit to target partitions */
+  AND ${
+    (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
+      ? "T.created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND T.created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+      : "T.created >= DATETIME_SUB(CURRENT_DATETIME('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+  }
+WHEN MATCHED THEN
+  UPDATE SET
+    T.sentiment = S.sentiment,
+    T.spam_classification = S.spam_classification,
+    T.spam_probability = S.spam_probability,
+    T.batch_processed_ts = S.batch_processed_ts

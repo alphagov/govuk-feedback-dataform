@@ -6,9 +6,10 @@ config {
   bigquery: {
     partitionBy: "DATE(created)",
     partitionExpirationDays: Number(dataform.projectConfig.vars.partitionExpirationDays),
+    requirePartitionFilter: true,
     updatePartitionFilter: (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-      ? "created >= '" + dataform.projectConfig.vars.backfill_start_date + "' AND T.created < '" + dataform.projectConfig.vars.backfill_end_date + "'"
-      : "created >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY)"
+      ? "created >= CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME) AND T.created < CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME)"
+      : "created >= CAST(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + dataform.projectConfig.vars.incremental_load_date_interval + " DAY) AS DATETIME)"
   }
 }
 
@@ -40,7 +41,7 @@ WITH unpivoted_contacts AS (
     CURRENT_TIMESTAMP() AS batch_processed_ts
 
   FROM
-   -- Source project is hardcoded, ensuring all environments use only the latest valid live data
+   /*  Source project is hardcoded, ensuring all environments use only the latest valid live data */
     `govuk-knowledge-graph.support_api.anonymous_contacts` AS raw
     LEFT JOIN UNNEST(
       CASE raw.type
@@ -66,13 +67,14 @@ WITH unpivoted_contacts AS (
   WHERE 
     ${
       (dataform.projectConfig.vars.backfill_start_date && dataform.projectConfig.vars.backfill_end_date)
-        ? "raw.created_at >= TIMESTAMP('" + dataform.projectConfig.vars.backfill_start_date + "', 'Europe/London') AND raw.created_at < TIMESTAMP('" + dataform.projectConfig.vars.backfill_end_date + "', 'Europe/London')"
-        : "raw.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY)"
+        ? "raw.created_at >= TIMESTAMP(CAST('" + dataform.projectConfig.vars.backfill_start_date + "' AS DATETIME), 'Europe/London') AND raw.created_at < TIMESTAMP(CAST('" + dataform.projectConfig.vars.backfill_end_date + "' AS DATETIME), 'Europe/London')"
+        : "raw.created_at >= TIMESTAMP(DATE_SUB(CURRENT_DATE('Europe/London'), INTERVAL " + (incremental() ? dataform.projectConfig.vars.incremental_load_date_interval : dataform.projectConfig.vars.historic_load_date_interval) + " DAY), 'Europe/London')"
     }
 )
 
 SELECT *
 FROM unpivoted_contacts
+
 -- Ensure no duplicate response_identifiers reach the BigQuery MERGE step
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY response_identifier 
